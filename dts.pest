@@ -1,0 +1,81 @@
+// A Parsing Expression Grammar for the Devicetree Source format.
+//
+// See https://devicetree-specification.readthedocs.io/en/stable/source-language.html.
+//
+// TODO: "/bits/", see https://stackoverflow.com/a/74074718
+
+// special rules pest inserts between most tokens
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+// not silent; we want comments back when pretty-printing
+COMMENT = { block_comment | line_comment }
+
+newline = _{ "\n" | "\r\n" }
+line_comment = _{ ("//" ~ !("/" | "!") ~ (!newline ~ ANY)*) }
+block_comment = _{ "/*" ~ (block_comment | !"*/" ~ ANY)* ~ "*/" }
+
+dts = { version ~ include* ~ (topdelnode | topnode)* }
+// TODO: /memreserve/
+
+version = { "/dts-v1/" ~ ";" }
+
+// TODO: only permitted at top level, but dtc accepts it anywhere
+include = ${ "/include/" ~ (" " | "\t")* ~ string }
+
+topdelnode = { "/delete-node/" ~ noderef ~ ";" }
+
+topnode = { label* ~ ( "/" | noderef ) ~ nodebody }
+
+label = ${ labelname ~ ":" }
+labelname = @{ labelname_head ~ labelname_rest* }
+labelname_head = { 'A'..'Z' | "_" | 'a'..'z' }
+labelname_rest = { 'A'..'Z' | "_" | 'a'..'z' | '0'..'9' }
+
+noderef = ${ ("&" ~ labelname) | ("&{" ~ nodepath ~ "}") }
+
+nodepath = @{ ("/" ~ nodename)+ | "/" }
+nodename = @{ nodename_head ~ nodename_rest* ~ ("@" ~ nodename_rest*)? }
+nodename_head = { 'A'..'Z' | 'a'..'z' }
+nodename_rest = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "," | "." | "_" | "+" | "-" }
+
+nodebody = { "{" ~ propdef* ~ childdef* ~ "}" ~ ";" }
+propdef = { delprop | property }
+childdef = { delnode | childnode }
+delnode = { "/delete-node/" ~ nodename ~ ";" }
+delprop = { "/delete-property/" ~ propname  ~ ";" }
+
+childnode = { label* ~ nodename ~ nodebody }
+
+property = { propname ~  ("=" ~ propvalue)? ~ ";" }
+
+propname = @{ ( 'A'..'Z' | 'a'..'z' | '0'..'9' | "," | "." | "_" | "+" | "-" | "?" | "#" )+ }
+
+// TODO: interior labels, trailing labels.  or just don't support those?
+propvalue = { (value ~ ",")* ~ value }
+value = _{ cells | string | noderef | bytes }
+
+cells = { "<" ~ (cell)* ~ ">" }
+
+cell = { number | phandle }
+
+phandle = { noderef }
+
+number = @{ hexadecimal | octal | decimal }
+hexadecimal = { ^"0x" ~ ('0'..'9' | 'A'..'F' | 'a'..'f')* }
+octal = { "0" ~ ('0'..'7')* }
+decimal = { '1'..'9' ~ ('0'..'9')* }
+
+// TODO: this is the YAML defn, surely wrong
+// hmm, https://github.com/joelspadin/tree-sitter-devicetree/blob/main/grammar.js has
+// '\\', choice(/[^xuU]/, /\d{2,3}/, /x[0-9a-fA-F]{2,}/, /u[0-9a-fA-F]{4}/, /U[0-9a-fA-F]{8}/)
+string = ${ "\"" ~ inner ~ "\"" }
+inner = @{ char* }
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+
+// TODO: byte arrays
+bytes = { "[" ~ "]" }
+
+dtsfile = { SOI ~ dts ~ EOI }
