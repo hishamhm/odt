@@ -53,7 +53,7 @@ include_path = @{ quotedstring }
 
 plugin = { slash_plugin ~ semicolon }
 
-memreserve = { label* ~ slash_memreserve ~ expr ~ expr ~ semicolon }
+memreserve = { label* ~ slash_memreserve ~ (paren_expr | number){2} ~ semicolon }
 
 topdelnode = { slash_delete_node ~ noderef ~ semicolon }
 topomitnode = { slash_omit_if_no_ref ~ noderef ~ semicolon }
@@ -89,14 +89,14 @@ delprop_superfluous_prefix = { label* }
 
 childnode = { (label | slash_omit_if_no_ref)* ~ nodename ~ nodebody }
 
-nodename = @{ nodechar+ }
+nodename = @{ "\\"? ~ nodechar+ }
 // dtc accepts all of these during parsing; later validation forbids some.
 nodechar = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
 
 property = { label* ~ propname ~ (propassign ~ propvalue)? ~ semicolon }
 propassign = { "=" }
 
-propname = @{ propchar+ }
+propname = @{ "\\"? ~ propchar+ }
 // dtc accepts all of these during parsing; later validation forbids some.
 propchar = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
 
@@ -109,27 +109,28 @@ bits = { slash_bits ~ numeric_literal }
 open_cells = { "<" }
 close_cells = { ">" }
 
-cell = { phandle | expr }
+cell = { phandle | paren_expr | number }
 
 phandle = @{ noderef }
 
 // TODO: fix operator precedence with more intermediate nodes
-expr = { paren_expr | unary_expr | binary_expr | ternary_expr | number }
+expr = { unary_expr | binary_expr | ternary_expr | paren_expr | number }
 paren_expr = { open_paren ~ expr ~ close_paren }
 unary_expr = { unary_op ~ expr }
 binary_expr = { (paren_expr | unary_expr | number) ~ binary_op ~ expr }
-ternary_expr = { (paren_expr | unary_expr | number) ~ question ~ expr ~ colon ~ expr }
-unary_op = { logical_not | bitwise_not }
+ternary_expr = { (paren_expr | unary_expr | number) ~ question_mark ~ expr ~ colon ~ expr }
+unary_op = { logical_not | bitwise_not | negate }
 binary_op = { binary_arithmetic_op | binary_logical_op | binary_relational_op }
 binary_arithmetic_op = { add | subtract | multiply | divide | modulus }
 binary_logical_op = { logical_and | logical_or | bitwise_and | bitwise_or | bitwise_xor | left_shift | right_shift }
 binary_relational_op = { less_than_or_equal | greater_than_or_equal | less_than | greater_than | equal | not_equal }
 open_paren = { "(" }
 close_paren = { ")" }
-question = { "?" }
+question_mark = { "?" }
 colon = { ":" }
 logical_not = { "!" }
 bitwise_not = { "~" }
+negate = { "-" }
 add = { "+" }
 subtract = { "-" }
 multiply = { "*" }
@@ -150,16 +151,20 @@ equal = { "==" }
 not_equal = { "!=" }
 
 number = @{ char_literal | numeric_literal }
-// DIFF: dtc doesn't accept '\\'
-char_literal = @{ "'" ~ ( !("'" | "\\") ~ ANY | "\\" ~ ANY ) ~ "'" }
+
+// To improve error messages, escape sequences are not fully parsed here.
+// DIFF: dtc's parsing of '\\' is broken -- but only if there is a later ' in the file!
+char_literal = @{ "'" ~ singlequotedchar* ~ "'" }
+singlequotedchar = @{ !("'" | "\\") ~ ANY | "\\" ~ ANY }
+
 numeric_literal = @{ (hexadecimal | octal | decimal) ~ numeric_suffix? }
 hexadecimal = @{ ^"0x" ~ ('0'..'9' | 'A'..'F' | 'a'..'f')* }
 octal = @{ "0" ~ ('0'..'7')* }
 decimal = @{ '1'..'9' ~ ('0'..'9')* }
 numeric_suffix = { "ULL" | "LL" | "UL" | "L" | "U" }
 
-quotedstring = @{ "\"" ~ quotedstringchar* ~ "\"" }
-quotedstringchar = @{ !("\"" | "\\") ~ ANY | "\\" ~ ANY }
+quotedstring = @{ "\"" ~ doublequotedchar* ~ "\"" }
+doublequotedchar = @{ !("\"" | "\\") ~ ANY | "\\" ~ ANY }
 
 bytestring = { open_square ~ (label | hexbyte)* ~ close_square }
 open_square = { "[" }
