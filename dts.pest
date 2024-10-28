@@ -3,8 +3,19 @@
 // See https://devicetree-specification.readthedocs.io/en/stable/source-language.html.
 //
 // DIFF comments mark known differences from the grammar `dtc` accepts.
-//
-// TODO: maybe just drop all the features we don't want?  would sure make this simpler.
+
+// This grammar is not as strict as it could be.  For the sake of error
+// messages on bad input, some constraints are checked at the AST level.
+// For example, the exact set of characters in node/property names; `dtc`
+// checks only after the tree is built, so the following produces no errors:
+//   / {
+//       0-9,._+*#?@;
+//       0-9,._+*#?@ {};
+//   };
+//   / {
+//       /delete-property/ 0-9,._+*#?@;
+//       /delete-node/ 0-9,._+*#?@;
+//   };
 
 // Pest accepts the WHITESPACE and COMMENT rules between any other tokens
 // outside an atomic rule (introduced with '@' or '$').
@@ -13,35 +24,32 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = ${ block_comment | line_comment }
 // We want to capture comments for pretty-printing, so these rules are not silent.
 block_comment = { "/*" ~ (block_comment | !"*/" ~ ANY)* ~ "*/" }
-// DIFF: dtc requires that line comments end with '\n'; can't place one at the end of a noeol file
+// DIFF: dtc requires line comments to end with '\n'; can't place one at the end of a noeol file
 line_comment = { ("//" ~ (!newline ~ ANY)*) }
 newline = _{ "\n" | "\r\n" }
 
 // Overall structure of a DTS file.
 dtsfile = { SOI ~ dts ~ EOI }
-dts = { version ~ plugin? ~ include* ~ memreserve* ~ (topnode ~ (topdelnode | topnode)*)? }
-// TODO: #line directives?
+dts = { version ~ plugin? ~ include* ~ memreserve* ~ (topnode ~ (topdelnode | topomitnode | topnode)*)? }
+// DIFF: dtc accepts #line directives (as emitted by cpp)
 
 semicolon = { ";" }
-slash_dts_v1 = { "/dts-v1/" }
-slash_include = { "/include/" }
+slash_bits = { "/bits/" }
 slash_delete_node = { "/delete-node/" }
 slash_delete_property = { "/delete-property/" }
-slash_bits = { "/bits/" }
+slash_dts_v1 = { "/dts-v1/" }
+slash_incbin = { "/incbin/" }
+slash_include = { "/include/" }
 slash_memreserve = { "/memreserve/" }
 slash_omit_if_no_ref = { "/omit-if-no-ref/" }
 slash_plugin = { "/plugin/" }
-// TODO: incbin?  looks like dtc accepts
-//   /incbin/ ("filename")
-//   /incbin/ ("filename", start, len)
-// in a propvalue?
 
 version = { slash_dts_v1 ~ semicolon }
 
 // DIFF: accepts /include/ anywhere, not just at file scope
-include = ${ slash_include ~ horizontal_whitespace ~ include_path }
-horizontal_whitespace = _{ (" " | "\t")* }
-include_path = @{ string }
+include = ${ slash_include ~ include_whitespace ~ include_path }
+include_whitespace = @{ WHITESPACE* }
+include_path = @{ quotedstring }
 
 plugin = { slash_plugin ~ semicolon }
 
@@ -52,7 +60,8 @@ topomitnode = { slash_omit_if_no_ref ~ noderef ~ semicolon }
 
 // DIFF: dtc forbids labeling the first topnode
 topnode = { label* ~ ( rootnode | noderef ) ~ nodebody }
-rootnode = { "/" }
+// improve error messages by avoiding a partial parse of e.g. "/dts-v1;/" as "/"
+rootnode = @{ "/" ~ !('A'..'Z' | 'a'..'z' | '0'..'9') }
 
 label = @{ labelname ~ ":" }
 labelname = @{ labelname_head ~ labelname_rest* }
@@ -61,11 +70,10 @@ labelname_rest = { 'A'..'Z' | "_" | 'a'..'z' | '0'..'9' }
 
 noderef = @{ ("&" ~ labelname) | ("&{" ~ nodepath ~ "}") }
 
-nodepath = @{ ("/" ~ nodename)+ | "/" }
-// TODO:  Maybe don't enforce @ placement in the parser.
-nodename = @{ nodename_head ~ nodename_rest* ~ ("@" ~ nodename_rest*)? }
-nodename_head = { 'A'..'Z' | 'a'..'z' }
-nodename_rest = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "," | "." | "_" | "+" | "-" }
+// dtc will accept and normalize node paths such as "/x///y/".
+// label-relative references such as &{label/child/subnode} also work.
+nodepath = @{ nodepathchar+ }
+nodepathchar = @{ nodechar | "/" }
 
 nodebody = { open_node ~ nodecontents ~ close_node ~ semicolon }
 open_node = { "{" }
@@ -73,26 +81,31 @@ close_node = { "}" }
 nodecontents = { propdef* ~ childdef* }
 propdef = { delprop | property }
 childdef = { delnode | childnode }
-// DIFF: dtc allows labeling /delete-node/, which is pointless
-// DIFF: dtc allows /omit-if-no-ref/ on /delete-node/, which is pointless
-delnode = { slash_delete_node ~ nodename ~ semicolon }
-// DIFF: dtc allows labeling /delete-property/, which is pointless
-delprop = { slash_delete_property ~ propname  ~ semicolon }
+
+delnode = { delnode_superfluous_prefix? ~ slash_delete_node ~ nodename ~ semicolon }
+delnode_superfluous_prefix = { (label | slash_omit_if_no_ref)* }
+delprop = { delprop_superfluous_prefix? ~ slash_delete_property ~ propname  ~ semicolon }
+delprop_superfluous_prefix = { label* }
 
 childnode = { (label | slash_omit_if_no_ref)* ~ nodename ~ nodebody }
+
+nodename = @{ nodechar+ }
+// dtc accepts all of these during parsing; later validation forbids some.
+nodechar = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
 
 property = { label* ~ propname ~ (propassign ~ propvalue)? ~ semicolon }
 propassign = { "=" }
 
-propname = @{ ( 'A'..'Z' | 'a'..'z' | '0'..'9' | "," | "." | "_" | "+" | "-" | "?" | "#" | "*" )+ }
+propname = @{ propchar+ }
+// dtc accepts all of these during parsing; later validation forbids some.
+propchar = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
 
-// TODO: "/bits/", see https://stackoverflow.com/a/74074718
 propvalue = { (value ~ comma)* ~ value }
 comma = { "," }
-// TODO: interior labels, trailing labels
-value = _{ cells | string | noderef | bytestring }
+value = { label* ~ (cells | quotedstring | noderef | bytestring | incbin) ~ label* }
 
-cells = { open_cells ~ (cell)* ~ close_cells }
+cells = { bits? ~ open_cells ~ (cell | label)* ~ close_cells }
+bits = { slash_bits ~ numeric_literal }
 open_cells = { "<" }
 close_cells = { ">" }
 
@@ -100,7 +113,7 @@ cell = { phandle | expr }
 
 phandle = @{ noderef }
 
-// TODO: operator precedence.  dtc-parser.y uses more intermediate nodes.
+// TODO: fix operator precedence with more intermediate nodes
 expr = { paren_expr | unary_expr | binary_expr | ternary_expr | number }
 paren_expr = { open_paren ~ expr ~ close_paren }
 unary_expr = { unary_op ~ expr }
@@ -136,18 +149,22 @@ greater_than = { ">" }
 equal = { "==" }
 not_equal = { "!=" }
 
-// TODO: numbers take a trailing (U|L|UL|LL|ULL)
-number = @{ char_literal | hexadecimal | octal | decimal }
+number = @{ char_literal | numeric_literal }
 // DIFF: dtc doesn't accept '\\'
 char_literal = @{ "'" ~ ( !("'" | "\\") ~ ANY | "\\" ~ ANY ) ~ "'" }
+numeric_literal = @{ (hexadecimal | octal | decimal) ~ numeric_suffix? }
 hexadecimal = @{ ^"0x" ~ ('0'..'9' | 'A'..'F' | 'a'..'f')* }
 octal = @{ "0" ~ ('0'..'7')* }
 decimal = @{ '1'..'9' ~ ('0'..'9')* }
+numeric_suffix = { "ULL" | "LL" | "UL" | "L" | "U" }
 
-string = @{ "\"" ~ stringchar* ~ "\"" }
-stringchar = @{ !("\"" | "\\") ~ ANY | "\\" ~ ANY }
+quotedstring = @{ "\"" ~ quotedstringchar* ~ "\"" }
+quotedstringchar = @{ !("\"" | "\\") ~ ANY | "\\" ~ ANY }
 
-bytestring = { open_square ~ hexbyte* ~ close_square }
+bytestring = { open_square ~ (label | hexbyte)* ~ close_square }
 open_square = { "[" }
 close_square = { "]" }
 hexbyte = @{ ('0'..'9' | 'A'..'F' | 'a'..'f'){2} }
+
+incbin = { slash_incbin ~ open_paren ~ incbin_args ~ close_paren }
+incbin_args = { quotedstring ~ (comma ~ numeric_literal){2}? }
