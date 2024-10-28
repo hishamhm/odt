@@ -2,80 +2,152 @@
 //
 // See https://devicetree-specification.readthedocs.io/en/stable/source-language.html.
 //
-// TODO: "/bits/", see https://stackoverflow.com/a/74074718
+// DIFF comments mark known differences from the grammar `dtc` accepts.
+//
+// TODO: maybe just drop all the features we don't want?  would sure make this simpler.
 
-// special rules pest inserts between most tokens
+// Pest accepts the WHITESPACE and COMMENT rules between any other tokens
+// outside an atomic rule (introduced with '@' or '$').
+// We discard whitespace, so this rule is silent.
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
-// not silent; we want comments back when pretty-printing
-COMMENT = { block_comment | line_comment }
-
+COMMENT = ${ block_comment | line_comment }
+// We want to capture comments for pretty-printing, so these rules are not silent.
+block_comment = { "/*" ~ (block_comment | !"*/" ~ ANY)* ~ "*/" }
+// DIFF: dtc requires that line comments end with '\n'; can't place one at the end of a noeol file
+line_comment = { ("//" ~ (!newline ~ ANY)*) }
 newline = _{ "\n" | "\r\n" }
-line_comment = _{ ("//" ~ !("/" | "!") ~ (!newline ~ ANY)*) }
-block_comment = _{ "/*" ~ (block_comment | !"*/" ~ ANY)* ~ "*/" }
 
-dts = { version ~ include* ~ (topdelnode | topnode)* }
-// TODO: /memreserve/
+// Overall structure of a DTS file.
+dtsfile = { SOI ~ dts ~ EOI }
+dts = { version ~ plugin? ~ include* ~ memreserve* ~ (topnode ~ (topdelnode | topnode)*)? }
+// TODO: #line directives?
 
-version = { "/dts-v1/" ~ ";" }
+semicolon = { ";" }
+slash_dts_v1 = { "/dts-v1/" }
+slash_include = { "/include/" }
+slash_delete_node = { "/delete-node/" }
+slash_delete_property = { "/delete-property/" }
+slash_bits = { "/bits/" }
+slash_memreserve = { "/memreserve/" }
+slash_omit_if_no_ref = { "/omit-if-no-ref/" }
+slash_plugin = { "/plugin/" }
+// TODO: incbin?  looks like dtc accepts
+//   /incbin/ ("filename")
+//   /incbin/ ("filename", start, len)
+// in a propvalue?
 
-// TODO: only permitted at top level, but dtc accepts it anywhere
-include = ${ "/include/" ~ (" " | "\t")* ~ string }
+version = { slash_dts_v1 ~ semicolon }
 
-topdelnode = { "/delete-node/" ~ noderef ~ ";" }
+// DIFF: accepts /include/ anywhere, not just at file scope
+include = ${ slash_include ~ horizontal_whitespace ~ include_path }
+horizontal_whitespace = _{ (" " | "\t")* }
+include_path = @{ string }
 
-topnode = { label* ~ ( "/" | noderef ) ~ nodebody }
+plugin = { slash_plugin ~ semicolon }
 
-label = ${ labelname ~ ":" }
+memreserve = { label* ~ slash_memreserve ~ expr ~ expr ~ semicolon }
+
+topdelnode = { slash_delete_node ~ noderef ~ semicolon }
+topomitnode = { slash_omit_if_no_ref ~ noderef ~ semicolon }
+
+// DIFF: dtc forbids labeling the first topnode
+topnode = { label* ~ ( rootnode | noderef ) ~ nodebody }
+rootnode = { "/" }
+
+label = @{ labelname ~ ":" }
 labelname = @{ labelname_head ~ labelname_rest* }
 labelname_head = { 'A'..'Z' | "_" | 'a'..'z' }
 labelname_rest = { 'A'..'Z' | "_" | 'a'..'z' | '0'..'9' }
 
-noderef = ${ ("&" ~ labelname) | ("&{" ~ nodepath ~ "}") }
+noderef = @{ ("&" ~ labelname) | ("&{" ~ nodepath ~ "}") }
 
 nodepath = @{ ("/" ~ nodename)+ | "/" }
+// TODO:  Maybe don't enforce @ placement in the parser.
 nodename = @{ nodename_head ~ nodename_rest* ~ ("@" ~ nodename_rest*)? }
 nodename_head = { 'A'..'Z' | 'a'..'z' }
 nodename_rest = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "," | "." | "_" | "+" | "-" }
 
-nodebody = { "{" ~ propdef* ~ childdef* ~ "}" ~ ";" }
+nodebody = { open_node ~ nodecontents ~ close_node ~ semicolon }
+open_node = { "{" }
+close_node = { "}" }
+nodecontents = { propdef* ~ childdef* }
 propdef = { delprop | property }
 childdef = { delnode | childnode }
-delnode = { "/delete-node/" ~ nodename ~ ";" }
-delprop = { "/delete-property/" ~ propname  ~ ";" }
+// DIFF: dtc allows labeling /delete-node/, which is pointless
+// DIFF: dtc allows /omit-if-no-ref/ on /delete-node/, which is pointless
+delnode = { slash_delete_node ~ nodename ~ semicolon }
+// DIFF: dtc allows labeling /delete-property/, which is pointless
+delprop = { slash_delete_property ~ propname  ~ semicolon }
 
-childnode = { label* ~ nodename ~ nodebody }
+childnode = { (label | slash_omit_if_no_ref)* ~ nodename ~ nodebody }
 
-property = { propname ~  ("=" ~ propvalue)? ~ ";" }
+property = { label* ~ propname ~ (propassign ~ propvalue)? ~ semicolon }
+propassign = { "=" }
 
-propname = @{ ( 'A'..'Z' | 'a'..'z' | '0'..'9' | "," | "." | "_" | "+" | "-" | "?" | "#" )+ }
+propname = @{ ( 'A'..'Z' | 'a'..'z' | '0'..'9' | "," | "." | "_" | "+" | "-" | "?" | "#" | "*" )+ }
 
-// TODO: interior labels, trailing labels.  or just don't support those?
-propvalue = { (value ~ ",")* ~ value }
-value = _{ cells | string | noderef | bytes }
+// TODO: "/bits/", see https://stackoverflow.com/a/74074718
+propvalue = { (value ~ comma)* ~ value }
+comma = { "," }
+// TODO: interior labels, trailing labels
+value = _{ cells | string | noderef | bytestring }
 
-cells = { "<" ~ (cell)* ~ ">" }
+cells = { open_cells ~ (cell)* ~ close_cells }
+open_cells = { "<" }
+close_cells = { ">" }
 
-cell = { number | phandle }
+cell = { phandle | expr }
 
-phandle = { noderef }
+phandle = @{ noderef }
 
-number = @{ hexadecimal | octal | decimal }
-hexadecimal = { ^"0x" ~ ('0'..'9' | 'A'..'F' | 'a'..'f')* }
-octal = { "0" ~ ('0'..'7')* }
-decimal = { '1'..'9' ~ ('0'..'9')* }
+// TODO: operator precedence.  dtc-parser.y uses more intermediate nodes.
+expr = { paren_expr | unary_expr | binary_expr | ternary_expr | number }
+paren_expr = { open_paren ~ expr ~ close_paren }
+unary_expr = { unary_op ~ expr }
+binary_expr = { (paren_expr | unary_expr | number) ~ binary_op ~ expr }
+ternary_expr = { (paren_expr | unary_expr | number) ~ question ~ expr ~ colon ~ expr }
+unary_op = { logical_not | bitwise_not }
+binary_op = { binary_arithmetic_op | binary_logical_op | binary_relational_op }
+binary_arithmetic_op = { add | subtract | multiply | divide | modulus }
+binary_logical_op = { logical_and | logical_or | bitwise_and | bitwise_or | bitwise_xor | left_shift | right_shift }
+binary_relational_op = { less_than_or_equal | greater_than_or_equal | less_than | greater_than | equal | not_equal }
+open_paren = { "(" }
+close_paren = { ")" }
+question = { "?" }
+colon = { ":" }
+logical_not = { "!" }
+bitwise_not = { "~" }
+add = { "+" }
+subtract = { "-" }
+multiply = { "*" }
+divide = { "/" }
+modulus = { "%" }
+logical_and = { "&&" }
+logical_or = { "||" }
+bitwise_and = { "&" }
+bitwise_or = { "|" }
+bitwise_xor = { "^" }
+left_shift = { "<<" }
+right_shift = { ">>" }
+less_than_or_equal = { "<=" }
+greater_than_or_equal = { ">=" }
+less_than = { "<" }
+greater_than = { ">" }
+equal = { "==" }
+not_equal = { "!=" }
 
-// TODO: this is the YAML defn, surely wrong
-// hmm, https://github.com/joelspadin/tree-sitter-devicetree/blob/main/grammar.js has
-// '\\', choice(/[^xuU]/, /\d{2,3}/, /x[0-9a-fA-F]{2,}/, /u[0-9a-fA-F]{4}/, /U[0-9a-fA-F]{8}/)
-string = ${ "\"" ~ inner ~ "\"" }
-inner = @{ char* }
-char = {
-    !("\"" | "\\") ~ ANY
-    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
-    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
-}
+// TODO: numbers take a trailing (U|L|UL|LL|ULL)
+number = @{ char_literal | hexadecimal | octal | decimal }
+// DIFF: dtc doesn't accept '\\'
+char_literal = @{ "'" ~ ( !("'" | "\\") ~ ANY | "\\" ~ ANY ) ~ "'" }
+hexadecimal = @{ ^"0x" ~ ('0'..'9' | 'A'..'F' | 'a'..'f')* }
+octal = @{ "0" ~ ('0'..'7')* }
+decimal = @{ '1'..'9' ~ ('0'..'9')* }
 
-// TODO: byte arrays
-bytes = { "[" ~ "]" }
+string = @{ "\"" ~ stringchar* ~ "\"" }
+stringchar = @{ !("\"" | "\\") ~ ANY | "\\" ~ ANY }
 
-dtsfile = { SOI ~ dts ~ EOI }
+bytestring = { open_square ~ hexbyte* ~ close_square }
+open_square = { "[" }
+close_square = { "]" }
+hexbyte = @{ ('0'..'9' | 'A'..'F' | 'a'..'f'){2} }
