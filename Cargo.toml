@@ -8,6 +8,9 @@ pest = "2.7.14"
 pest_derive = "2.7.14"
 
 [[bin]]
+name = "dtc"
+
+[[bin]]
 name = "dtsfmt"
 
 [dev-dependencies]

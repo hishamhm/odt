@@ -1,3 +1,5 @@
+//! Facilities for parsing DTS files and expanding "/include/" directives.
+
 use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
@@ -8,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 #[derive(Parser)]
-#[grammar = "tree/dts.pest"]
+#[grammar = "parse/dts.pest"]
 struct DtsParser;
 
 // TODO: look at ginko grammar

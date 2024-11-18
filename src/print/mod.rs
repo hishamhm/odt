@@ -1,4 +1,4 @@
-use crate::tree::{Rule, Tree};
+use crate::parse::{Rule, Tree};
 use std::fmt::Write;
 
 pub fn format(dts: Tree) -> String {
@@ -173,8 +173,8 @@ fn test_format() {
     )
     .enumerate()
     {
-        let tree = crate::tree::parse(&input);
-        let formatted = format(tree);
+        let ast = crate::parse::parse(&input);
+        let formatted = format(ast);
         // to renumber input:
         // print!("-- {index}\n{input}");
         // to regenerate expected output:
@@ -184,8 +184,5 @@ fn test_format() {
             expected,
             "formatted output for testcase {index} differs from expected"
         );
-        // XXX if input != output { eprintln!("input #{index} changed:\n<<< OLD\n{input}\n>>> NEW\n{output}\n"); }
     }
 }
-
-// TODO: do i need full (input, golden) pairs?  or can i just test with perturbation from golden?
