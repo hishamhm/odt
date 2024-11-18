@@ -1,5 +1,5 @@
 [package]
-name = "dtpeg"
+name = "dtsp"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,5 +8,7 @@ pest = "2.7.14"
 pest_derive = "2.7.14"
 
 [[bin]]
-name = "dtpeg"
-path = "main.rs"
+name = "dtsfmt"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"

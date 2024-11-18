@@ -19,18 +19,19 @@
 
 // Pest accepts the WHITESPACE and COMMENT rules between any other tokens
 // outside an atomic rule (introduced with '@' or '$').
-// We discard whitespace, so this rule is silent.
-WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+// We need these tokens when pretty-printing, so these rules are not silent.
+WHITESPACE = { " " | "\t" | "\r" | "\n" }
 COMMENT = ${ block_comment | line_comment }
-// We want to capture comments for pretty-printing, so these rules are not silent.
 block_comment = { "/*" ~ (block_comment | !"*/" ~ ANY)* ~ "*/" }
-// DIFF: dtc requires line comments to end with '\n'; can't place one at the end of a noeol file
-line_comment = { ("//" ~ (!newline ~ ANY)*) }
+// Line comments contain their own newline.  (This means we don't accept one at
+// the end of a noeol file; dtc has the same restriction.)
+line_comment = { "//" ~ (!newline ~ ANY)* ~ newline }
 newline = _{ "\n" | "\r\n" }
 
 // Overall structure of a DTS file.
 dtsfile = { SOI ~ dts ~ EOI }
-dts = { version ~ plugin? ~ include* ~ memreserve* ~ (topnode ~ (topdelnode | topomitnode | topnode)*)? }
+dts = { header* ~ include* ~ memreserve* ~ (topnode ~ (topdelnode | topomitnode | topnode)*)? }
+
 // DIFF: dtc accepts #line directives (as emitted by cpp)
 
 semicolon = { ";" }
@@ -44,14 +45,16 @@ slash_memreserve = { "/memreserve/" }
 slash_omit_if_no_ref = { "/omit-if-no-ref/" }
 slash_plugin = { "/plugin/" }
 
+// DIFF: dtc requires a "/dts-v1/;" header but we make it optional,
+//       to allow parsing included file with the same grammar.
+header = { version ~ plugin? }
 version = { slash_dts_v1 ~ semicolon }
+plugin = { slash_plugin ~ semicolon }
 
 // DIFF: accepts /include/ anywhere, not just at file scope
 include = ${ slash_include ~ include_whitespace ~ include_path }
-include_whitespace = @{ WHITESPACE* }
+include_whitespace = _{ WHITESPACE* }
 include_path = @{ quotedstring }
-
-plugin = { slash_plugin ~ semicolon }
 
 memreserve = { label* ~ slash_memreserve ~ (paren_expr | number){2} ~ semicolon }
 
