@@ -1,6 +1,5 @@
 //! Facilities for parsing DTS files and expanding "/include/" directives.
 
-use crate::{Node, Property};
 use pest_typed::TypedParser;
 use pest_typed_derive::TypedParser;
 
@@ -8,15 +7,14 @@ use pest_typed_derive::TypedParser;
 #[grammar = "dts.pest"]
 #[emit_rule_reference]
 #[box_only_if_needed]
-#[simulate_pair_api]
 struct DtsParser;
 
-// TODO: rename these
-pub use crate::parse::rules::dtsfile;
+pub use crate::parse::rules::Dts;
+use crate::parse::rules::*;
 
-pub fn parse(source: &str) -> dtsfile {
-    match DtsParser::try_parse::<dtsfile>(&source) {
-        Ok(s) => s,
+pub fn parse(source: &str) -> Dts {
+    match DtsParser::try_parse::<DtsFile>(&source) {
+        Ok(dtsfile) => dtsfile.Dts().clone(),
         // TODO: evaluate quality of error messages from this
         Err(err) => panic!(
             "parsing failed:\n{}",
@@ -55,6 +53,8 @@ pub fn parse(source: &str) -> dtsfile {
 
 /* XXX figure out if we need this.  possibly do in order to support multiple files?
  * are there pub constructors on these things?
+
+use crate::{Node, Property};
 
 pub struct Dts {
     pub items: Vec<TopItem>,

@@ -1,9 +1,9 @@
-// A Parsing Expression Grammar for the Devicetree Source format.
-//
-// See https://devicetree-specification.readthedocs.io/en/stable/source-language.html.
-//
-// DIFF comments mark known differences from the grammar `dtc` accepts.
+//! A Parsing Expression Grammar for the Devicetree Source format.
+//!
+//! See https://devicetree-specification.readthedocs.io/en/stable/source-language.html.
 
+// DIFF comments mark known differences from the grammar `dtc` accepts.
+//
 // This grammar is not as strict as it could be.  For the sake of error
 // messages on bad input, some constraints are checked at the AST level.
 // For example, the exact set of characters in node/property names; `dtc`
@@ -21,159 +21,164 @@
 // outside an atomic rule (introduced with '@' or '$').
 // We need these tokens when pretty-printing, so these rules are not silent.
 WHITESPACE = { " " | "\t" | "\r" | "\n" }
-COMMENT = ${ block_comment | line_comment }
-block_comment = { "/*" ~ (block_comment | !"*/" ~ ANY)* ~ "*/" }
+// XXX why is this ${}?  try removing or pushing down
+COMMENT = ${ BlockComment | LineComment }
+BlockComment = { "/*" ~ (BlockComment | !"*/" ~ ANY)* ~ "*/" }
 // Line comments contain their own newline.  (This means we don't accept one at
 // the end of a noeol file; dtc has the same restriction.)
-line_comment = { "//" ~ (!newline ~ ANY)* ~ newline }
+LineComment = { "//" ~ (!newline ~ ANY)* ~ newline }
 newline = _{ "\n" | "\r\n" }
 
-// Overall structure of a DTS file.
-dtsfile = { SOI ~ dts ~ EOI }
-dts = { header* ~ include* ~ memreserve* ~ (topnode ~ (topdelnode | topomitnode | topnode)*)? }
+DtsFile = { SOI ~ Dts ~ EOI }
+
+/// Overall structure of a DTS file.
+Dts = { Header* ~ Include* ~ Memreserve* ~ TopDef* }
 
 // DIFF: dtc accepts #line directives (as emitted by cpp)
 
-semicolon = { ";" }
-slash_bits = { "/bits/" }
-slash_delete_node = { "/delete-node/" }
-slash_delete_property = { "/delete-property/" }
-slash_dts_v1 = { "/dts-v1/" }
-slash_incbin = { "/incbin/" }
-slash_include = { "/include/" }
-slash_memreserve = { "/memreserve/" }
-slash_omit_if_no_ref = { "/omit-if-no-ref/" }
-slash_plugin = { "/plugin/" }
+Semicolon = { ";" }
+SlashBits = { "/bits/" }
+SlashDeleteNode = { "/delete-node/" }
+SlashDeleteProperty = { "/delete-property/" }
+SlashDtsV1 = { "/dts-v1/" }
+SlashIncbin = { "/incbin/" }
+SlashInclude = { "/include/" }
+SlashMemreserve = { "/memreserve/" }
+SlashOmitIfNoRef = { "/omit-if-no-ref/" }
+SlashPlugin = { "/plugin/" }
 
 // DIFF: dtc requires a "/dts-v1/;" header but we make it optional,
 //       to allow parsing included files with the same grammar.
-header = { version ~ plugin? }
-version = { slash_dts_v1 ~ semicolon }
-plugin = { slash_plugin ~ semicolon }
+Header = { Version ~ Plugin? }
+Version = { SlashDtsV1 ~ Semicolon }
+Plugin = { SlashPlugin ~ Semicolon }
 
 // DIFF: accepts /include/ anywhere, not just at file scope
-include = ${ slash_include ~ include_whitespace ~ include_path }
-include_whitespace = _{ WHITESPACE* }
-include_path = @{ quotedstring }
+Include = ${ SlashInclude ~ IncludeWhitespace ~ IncludePath }
+IncludeWhitespace = _{ WHITESPACE* }
+// XXX why this wrapper node?
+IncludePath = @{ QuotedString }
 
-memreserve = { label* ~ slash_memreserve ~ (paren_expr | number){2} ~ semicolon }
+Memreserve = { Label* ~ SlashMemreserve ~ (ParenExpr | IntLiteral){2} ~ Semicolon }
 
-topdelnode = { slash_delete_node ~ noderef ~ semicolon }
-topomitnode = { slash_omit_if_no_ref ~ noderef ~ semicolon }
+// DIFF: dtc requires the first TopDef to be an unlabeled TopNode
+TopDef = { TopDelNode | TopOmitNode | TopNode }
+TopDelNode = { SlashDeleteNode ~ NodeReference ~ Semicolon }
+TopOmitNode = { SlashOmitIfNoRef ~ NodeReference ~ Semicolon }
 
-// DIFF: dtc forbids labeling the first topnode
-topnode = { label* ~ topnodename ~ nodebody }
-topnodename = { ( rootnode | noderef ) }
+TopNode = { Label* ~ TopNodeName ~ NodeBody }
+TopNodeName = { ( RootNodeName | NodeReference ) }
 // improve error messages by avoiding a partial parse of e.g. "/dts-v1;/" as "/"
-rootnode = @{ "/" ~ !('A'..'Z' | 'a'..'z' | '0'..'9') }
+RootNodeName = @{ "/" ~ !('A'..'Z' | 'a'..'z' | '0'..'9') }
 
-label = @{ labelname ~ ":" }
-labelname = @{ labelname_head ~ labelname_rest* }
+Label = @{ LabelName ~ ":" }
+LabelName = @{ labelname_head ~ labelname_rest* }
 labelname_head = { 'A'..'Z' | "_" | 'a'..'z' }
 labelname_rest = { 'A'..'Z' | "_" | 'a'..'z' | '0'..'9' }
 
-noderef = @{ ("&" ~ labelname) | ("&{" ~ nodepath ~ "}") }
+NodeReference = @{ ("&" ~ LabelName) | ("&{" ~ NodePath ~ "}") }
 
 // dtc will accept and normalize node paths such as "/x///y/".
 // label-relative references such as &{label/child/subnode} also work.
-nodepath = @{ nodepathchar+ }
-nodepathchar = @{ nodechar | "/" }
+NodePath = @{ nodepathchar+ }
+nodepathchar = { nodechar | "/" }
 
-nodebody = { open_node ~ nodecontents ~ close_node ~ semicolon }
-open_node = { "{" }
-close_node = { "}" }
-nodecontents = { propdef* ~ childdef* }
-propdef = { delprop | property }
-childdef = { delnode | childnode }
+NodeBody = { OpenNode ~ NodeContents ~ CloseNode ~ Semicolon }
+OpenNode = { "{" }
+CloseNode = { "}" }
+NodeContents = { PropDef* ~ ChildDef* }
+PropDef = { DelProp | Prop }
+ChildDef = { DelNode | ChildNode }
 
-delnode = { delnode_superfluous_prefix? ~ slash_delete_node ~ nodename ~ semicolon }
-delnode_superfluous_prefix = { (label | slash_omit_if_no_ref)* }
-delprop = { delprop_superfluous_prefix? ~ slash_delete_property ~ propname  ~ semicolon }
-delprop_superfluous_prefix = { label* }
+DelNode = { DelNodeSuperfluousPrefix? ~ SlashDeleteNode ~ NodeName ~ Semicolon }
+DelNodeSuperfluousPrefix = { (Label | SlashOmitIfNoRef)* }
+DelProp = { DelPropSuperfluousPrefix? ~ SlashDeleteProperty ~ PropName ~ Semicolon }
+DelPropSuperfluousPrefix = { Label* }
 
-childnode = { (label | slash_omit_if_no_ref)* ~ nodename ~ nodebody }
+ChildNode = { (Label | SlashOmitIfNoRef)* ~ NodeName ~ NodeBody }
 
-nodename = @{ "\\"? ~ nodechar+ }
+NodeName = @{ "\\"? ~ nodechar+ }
 // dtc accepts all of these during parsing; later validation forbids some.
 nodechar = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
 
-property = { label* ~ propname ~ (propassign ~ propvalue)? ~ semicolon }
-propassign = { "=" }
+Prop = { Label* ~ PropName ~ (PropAssign ~ PropValue)? ~ Semicolon }
+PropAssign = { "=" }
 
-propname = @{ "\\"? ~ propchar+ }
+PropName = @{ "\\"? ~ propchar+ }
 // dtc accepts all of these during parsing; later validation forbids some.
 propchar = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
 
-propvalue = { (value ~ comma)* ~ value }
-comma = { "," }
-value = { label* ~ (cells | quotedstring | noderef | bytestring | incbin) ~ label* }
+PropValue = { (Value ~ Comma)* ~ Value }
+Comma = { "," }
+Value = { Label* ~ (Cells | QuotedString | NodeReference | ByteString | Incbin) ~ Label* }
 
-cells = { bits? ~ open_cells ~ (cell | label)* ~ close_cells }
-bits = { slash_bits ~ numeric_literal }
-open_cells = { "<" }
-close_cells = { ">" }
+Cells = { Bits? ~ OpenCells ~ (Cell | Label)* ~ CloseCells }
+Bits = { SlashBits ~ NumericLiteral }
+OpenCells = { "<" }
+CloseCells = { ">" }
 
-cell = { phandle | paren_expr | number }
+Cell = { Phandle | ParenExpr | IntLiteral }
 
-phandle = @{ noderef }
+// XXX why this wrapper node?
+Phandle = @{ NodeReference }
 
 // TODO: fix operator precedence with more intermediate nodes
-expr = { unary_expr | binary_expr | ternary_expr | paren_expr | number }
-paren_expr = { open_paren ~ expr ~ close_paren }
-unary_expr = { unary_op ~ expr }
-binary_expr = { (paren_expr | unary_expr | number) ~ binary_op ~ expr }
-ternary_expr = { (paren_expr | unary_expr | number) ~ question_mark ~ expr ~ colon ~ expr }
-unary_op = { logical_not | bitwise_not | negate }
-binary_op = { binary_arithmetic_op | binary_logical_op | binary_relational_op }
-binary_arithmetic_op = { add | subtract | multiply | divide | modulus }
-binary_logical_op = { logical_and | logical_or | bitwise_and | bitwise_or | bitwise_xor | left_shift | right_shift }
-binary_relational_op = { less_than_or_equal | greater_than_or_equal | less_than | greater_than | equal | not_equal }
-open_paren = { "(" }
-close_paren = { ")" }
-question_mark = { "?" }
-colon = { ":" }
-logical_not = { "!" }
-bitwise_not = { "~" }
-negate = { "-" }
-add = { "+" }
-subtract = { "-" }
-multiply = { "*" }
-divide = { "/" }
-modulus = { "%" }
-logical_and = { "&&" }
-logical_or = { "||" }
-bitwise_and = { "&" }
-bitwise_or = { "|" }
-bitwise_xor = { "^" }
-left_shift = { "<<" }
-right_shift = { ">>" }
-less_than_or_equal = { "<=" }
-greater_than_or_equal = { ">=" }
-less_than = { "<" }
-greater_than = { ">" }
-equal = { "==" }
-not_equal = { "!=" }
+Expr = { UnaryExpr | BinaryExpr | TernaryExpr | ParenExpr | IntLiteral }
+ParenExpr = { OpenParen ~ Expr ~ CloseParen }
+UnaryExpr = { UnaryOp ~ Expr }
+BinaryExpr = { (ParenExpr | UnaryExpr | IntLiteral) ~ BinaryOp ~ Expr }
+TernaryExpr = { (ParenExpr | UnaryExpr | IntLiteral) ~ QuestionMark ~ Expr ~ Colon ~ Expr }
+UnaryOp = { LogicalNot | BitwiseNot | Negate }
+BinaryOp = { BinaryArithmeticOp | BinaryLogicalOp | BinaryRelationalOp }
+BinaryArithmeticOp = { Add | Subtract | Multiply | Divide | Modulus }
+BinaryLogicalOp = { LogicalAnd | LogicalOr | BitwiseAnd | BitwiseOr | BitwiseXor | LeftShift | RightShift }
+BinaryRelationalOp = { LessThanOrEqual | GreaterThanOrEqual | LessThan | GreaterThan | Equal | NotEqual }
+OpenParen = { "(" }
+CloseParen = { ")" }
+QuestionMark = { "?" }
+Colon = { ":" }
+LogicalNot = { "!" }
+BitwiseNot = { "~" }
+Negate = { "-" }
+Add = { "+" }
+Subtract = { "-" }
+Multiply = { "*" }
+Divide = { "/" }
+Modulus = { "%" }
+LogicalAnd = { "&&" }
+LogicalOr = { "||" }
+BitwiseAnd = { "&" }
+BitwiseOr = { "|" }
+BitwiseXor = { "^" }
+LeftShift = { "<<" }
+RightShift = { ">>" }
+LessThanOrEqual = { "<=" }
+GreaterThanOrEqual = { ">=" }
+LessThan = { "<" }
+GreaterThan = { ">" }
+Equal = { "==" }
+NotEqual = { "!=" }
 
-number = @{ char_literal | numeric_literal }
+IntLiteral = @{ CharLiteral | NumericLiteral }
 
 // To improve error messages, escape sequences are not fully parsed here.
 // DIFF: dtc's parsing of '\\' is broken -- but only if there is a later ' in the file!
-char_literal = @{ "'" ~ singlequotedchar* ~ "'" }
-singlequotedchar = @{ !("'" | "\\") ~ ANY | "\\" ~ ANY }
+CharLiteral = @{ "'" ~ singlequotedchar* ~ "'" }
+singlequotedchar = { !("'" | "\\") ~ ANY | "\\" ~ ANY }
 
-numeric_literal = @{ (hexadecimal | octal | decimal) ~ numeric_suffix? }
-hexadecimal = @{ ^"0x" ~ ('0'..'9' | 'A'..'F' | 'a'..'f')* }
-octal = @{ "0" ~ ('0'..'7')* }
-decimal = @{ '1'..'9' ~ ('0'..'9')* }
-numeric_suffix = { "ULL" | "LL" | "UL" | "L" | "U" }
+NumericLiteral = @{ (HexLiteral | OctalLiteral | DecimalLiteral) ~ NumericSuffix? }
+HexLiteral = @{ ^"0x" ~ ('0'..'9' | 'A'..'F' | 'a'..'f')* }
+OctalLiteral = @{ "0" ~ ('0'..'7')* }
+DecimalLiteral = @{ '1'..'9' ~ ('0'..'9')* }
+NumericSuffix = { "ULL" | "LL" | "UL" | "L" | "U" }
 
-quotedstring = @{ "\"" ~ doublequotedchar* ~ "\"" }
-doublequotedchar = @{ !("\"" | "\\") ~ ANY | "\\" ~ ANY }
+QuotedString = @{ "\"" ~ doublequotedchar* ~ "\"" }
+doublequotedchar = { !("\"" | "\\") ~ ANY | "\\" ~ ANY }
 
-bytestring = { open_square ~ (label | hexbyte)* ~ close_square }
-open_square = { "[" }
-close_square = { "]" }
-hexbyte = @{ ('0'..'9' | 'A'..'F' | 'a'..'f'){2} }
+ByteString = { OpenSquare ~ (Label | HexByte)* ~ CloseSquare }
+OpenSquare = { "[" }
+CloseSquare = { "]" }
+HexByte = @{ ('0'..'9' | 'A'..'F' | 'a'..'f'){2} }
 
-incbin = { slash_incbin ~ open_paren ~ incbin_args ~ close_paren }
-incbin_args = { quotedstring ~ (comma ~ numeric_literal){2}? }
+Incbin = { SlashIncbin ~ OpenParen ~ IncbinArgs ~ CloseParen }
+IncbinArgs = { QuotedString ~ (Comma ~ NumericLiteral){2}? }

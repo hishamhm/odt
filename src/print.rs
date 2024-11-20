@@ -109,16 +109,16 @@ impl PrettyPrinter {
             self.last = rule;
             let prepend_whitespace = match (last, rule) {
                 (Rule::EOI, _) => false,
-                (_, Rule::semicolon) => false,
-                (_, Rule::comma) => false,
-                (_, Rule::close_cells) => false,
-                (Rule::open_cells, _) => false,
+                (_, Rule::Semicolon) => false,
+                (_, Rule::Comma) => false,
+                (_, Rule::CloseCells) => false,
+                (Rule::OpenCells, _) => false,
                 _ => true,
             };
             // TODO:  Is there a better way to determine if we're in a COMMENT rule?
             let comment = match rule {
-                Rule::block_comment => true,
-                Rule::line_comment => true,
+                Rule::BlockComment => true,
+                Rule::LineComment => true,
                 _ => false,
             };
             // Only a comment on the same line is allowed to linger when a line break is pending.
@@ -131,14 +131,14 @@ impl PrettyPrinter {
             }
             write!(self.out, "{text}").unwrap();
             self.out.ensure_following_lines(match rule {
-                Rule::open_node | Rule::semicolon => 1,
+                Rule::OpenNode | Rule::Semicolon => 1,
                 _ => 0,
             });
             return;
         }
         let indent = match rule {
-            Rule::nodecontents => self.tabstop,
-            Rule::propvalue => self.tabstop,
+            Rule::NodeContents => self.tabstop,
+            Rule::PropValue => self.tabstop,
             _ => 0,
         };
         self.out.indent(indent);
@@ -147,9 +147,9 @@ impl PrettyPrinter {
         }
         self.out.indent(-indent);
         self.out.ensure_following_lines(match rule {
-            Rule::version => 2,
-            Rule::include => 1,
-            Rule::topnode => 2,
+            Rule::Version => 2,
+            Rule::Include => 1,
+            Rule::TopNode => 2,
             _ => 0,
         });
     }

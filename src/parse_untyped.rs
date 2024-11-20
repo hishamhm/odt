@@ -7,7 +7,6 @@ use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
 
-
 #[derive(Parser)]
 #[grammar = "dts.pest"]
 struct DtsParser;
@@ -15,8 +14,8 @@ struct DtsParser;
 pub type Tree<'a> = Pair<'a, Rule>;
 
 pub fn parse(source: &str) -> Tree {
-    match DtsParser::parse(Rule::dtsfile, &source) {
-        Ok(mut dts) => dts.next().unwrap(),
+    match DtsParser::parse(Rule::DtsFile, &source) {
+        Ok(mut dtsfile) => dtsfile.next().unwrap(),
         Err(err) => panic!(
             "parsing failed:\n{}",
             err.renamed_rules(|rule| format!("{:?}", rule))
