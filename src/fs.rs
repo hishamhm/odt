@@ -1,40 +1,17 @@
-//! Facilities for parsing DTS files and expanding "/include/" directives.
+//! Facilities for reading sources from the filesystem.
 
-use pest::iterators::Pair;
-use pest::Parser;
-use pest_derive::Parser;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-#[derive(Parser)]
-#[grammar = "parse/dts.pest"]
-struct DtsParser;
-
-// TODO: look at ginko grammar
-
-/// An Abstract Syntax Tree for a Devicetree source file.
-pub type Tree<'a> = Pair<'a, Rule>;
-
-pub fn parse(source: &str) -> Tree {
-    match DtsParser::parse(Rule::dtsfile, &source) {
-        Ok(mut dts) => dts.next().unwrap(),
-        Err(err) => panic!(
-            "parsing failed:\n{}",
-            err.renamed_rules(|rule| format!("{:?}", rule))
-        ),
-    }
-}
-
-// TODO: helper function for processing a file with includes
-
 /// A stateful helper for loading source files from a list of include directories to be searched.
 /// TODO: look at clang::FileManager and clang::HeaderSearch
+/// TODO: make this "FileLoader" and put the initial file in it too.  will simplify lifetimes.
 pub struct IncludeLoader {
     /// The list of directories to search
-    search_paths: Vec<PathBuf>,
+    search_path: Vec<PathBuf>,
     /// cache of previously loaded files
     file_contents: Mutex<HashMap<PathBuf, Option<Vec<u8>>>>,
     /// existing parent directories of files observed not to exist
@@ -42,17 +19,18 @@ pub struct IncludeLoader {
 }
 
 impl IncludeLoader {
-    pub fn new(search_paths: Vec<PathBuf>) -> Self {
+    pub fn new(search_path: Vec<PathBuf>) -> Self {
         Self {
-            search_paths,
+            search_path,
             file_contents: Default::default(),
             parents_of_missing: Default::default(),
         }
     }
 
     // TODO: do we need relative includes?
-    pub fn find(&self, included_path: &Path) -> Option<&[u8]> {
-        for dir in &self.search_paths {
+    pub fn find(&self, relative_to: Option<&Path>, included_path: &Path) -> Option<&[u8]> {
+        let search_path = self.search_path.iter().map(PathBuf::as_ref);
+        for dir in relative_to.into_iter().chain(search_path) {
             let path = dir.join(included_path);
             if let Some(content) = self.read(path) {
                 return Some(content);

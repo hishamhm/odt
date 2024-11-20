@@ -1,4 +1,4 @@
-use crate::parse::{Rule, Tree};
+use crate::parse_untyped::{Rule, Tree};
 use std::fmt::Write;
 
 pub fn format(dts: Tree) -> String {
@@ -86,9 +86,9 @@ impl PrettyPrinter {
 
     fn print(&mut self, p: Tree) {
         let rule = p.as_rule();
-        let token = p.as_str();
+        let text = p.as_str();
         if rule == Rule::WHITESPACE {
-            if token.contains('\n') {
+            if text.contains('\n') {
                 // TODO:  Rely less on the input formatting.
                 // XXX
                 // still seem to need two pieces of information:
@@ -129,7 +129,7 @@ impl PrettyPrinter {
             if prepend_whitespace {
                 self.out.ensure_space();
             }
-            write!(self.out, "{token}").unwrap();
+            write!(self.out, "{text}").unwrap();
             self.out.ensure_following_lines(match rule {
                 Rule::open_node | Rule::semicolon => 1,
                 _ => 0,
@@ -173,7 +173,7 @@ fn test_format() {
     )
     .enumerate()
     {
-        let ast = crate::parse::parse(&input);
+        let ast = crate::parse_untyped::parse(&input);
         let formatted = format(ast);
         // to renumber input:
         // print!("-- {index}\n{input}");

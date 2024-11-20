@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 pest = "2.7.14"
 pest_derive = "2.7.14"
+pest_typed = "0.16.0"
+pest_typed_derive = "0.16.0"
 
 [[bin]]
 name = "dtc"

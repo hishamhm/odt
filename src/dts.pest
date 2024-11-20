@@ -46,7 +46,7 @@ slash_omit_if_no_ref = { "/omit-if-no-ref/" }
 slash_plugin = { "/plugin/" }
 
 // DIFF: dtc requires a "/dts-v1/;" header but we make it optional,
-//       to allow parsing included file with the same grammar.
+//       to allow parsing included files with the same grammar.
 header = { version ~ plugin? }
 version = { slash_dts_v1 ~ semicolon }
 plugin = { slash_plugin ~ semicolon }
@@ -62,7 +62,8 @@ topdelnode = { slash_delete_node ~ noderef ~ semicolon }
 topomitnode = { slash_omit_if_no_ref ~ noderef ~ semicolon }
 
 // DIFF: dtc forbids labeling the first topnode
-topnode = { label* ~ ( rootnode | noderef ) ~ nodebody }
+topnode = { label* ~ topnodename ~ nodebody }
+topnodename = { ( rootnode | noderef ) }
 // improve error messages by avoiding a partial parse of e.g. "/dts-v1;/" as "/"
 rootnode = @{ "/" ~ !('A'..'Z' | 'a'..'z' | '0'..'9') }
 

@@ -1,10 +1,12 @@
 //! Facilities for converting a parsed Devicetree Source file into a tree of nodes.
 
-use crate::parse::Tree;
 use crate::{Node, Property};
 
-pub fn eval(_dts: Tree) -> Node {
-    // TODO: use dts
+// TODO: apply deletes and patches
+// TODO: evaluate arithmetic expressions
+// TODO: assign phandles
+
+pub fn eval() -> Node {
     Node {
         name: "".into(),
         properties: vec![Property {
