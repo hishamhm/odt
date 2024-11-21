@@ -1,6 +1,5 @@
 //! Facilities for reading sources from the filesystem.
 
-use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
@@ -27,33 +26,45 @@ impl IncludeLoader {
         }
     }
 
-    // TODO: do we need relative includes?
-    pub fn find(&self, relative_to: Option<&Path>, included_path: &Path) -> Option<&[u8]> {
+    /// Search for an include.  `relative_to` may specify one directory to check first.
+    /// The result is the path found and its contents, or `None` if no matching file was found.
+    pub fn find(&self, relative_to: Option<&Path>, included_path: &Path) -> Option<(&Path, &[u8])> {
         let search_path = self.search_path.iter().map(PathBuf::as_ref);
         for dir in relative_to.into_iter().chain(search_path) {
             let path = dir.join(included_path);
-            if let Some(content) = self.read(path) {
-                return Some(content);
+            if let Some(result) = self.read(path) {
+                return Some(result);
             }
         }
         None
     }
 
-    pub fn read(&self, path: PathBuf) -> Option<&[u8]> {
+    /// Read and cache a file.  If successful, the return value is a reference to
+    /// the path and the data (both owned by `self`).  Otherwise `None` is returned.
+    pub fn read<'a>(&'a self, path: PathBuf) -> Option<(&'a Path, &'a [u8])> {
         let mut file_contents = self.file_contents.lock().unwrap();
-        let contents = match file_contents.entry(path.clone()) {
-            Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => {
-                let path = entry.key();
-                let result = std::fs::read(path).ok();
-                if result.is_none() {
-                    self.track_parent_of_missing(path);
-                }
-                entry.insert(result)
+        let entry = file_contents.entry(path);
+        // SAFETY:  We never erase items from the map.
+        // The `entry.key()` PathBuf is either in the map, or will be moved into it.
+        // Hashtable resizes will only move the PathBuf, not its heap buffer.
+        // (This depends on PathBuf/OsStr/Vec not implementing SSO or the like.
+        //  We could wrap them in Rc<> to ensure they don't move.)
+        let key: &'a Path = unsafe { core::mem::transmute(entry.key().as_path()) };
+        match entry.or_insert_with(|| {
+            let result = std::fs::read(key).ok();
+            if result.is_none() {
+                self.track_parent_of_missing(key);
             }
-        };
-        // SAFETY:  We never remove an entry from the map, so the values live as long as &self.
-        unsafe { core::mem::transmute(contents.as_deref()) }
+            result
+        }) {
+            None => None,
+            Some(value) => {
+                // SAFETY:  We never erase items from the map.
+                // Hashtable resizes will only move the Vec, not its heap buffer.
+                let value = unsafe { core::mem::transmute(value.as_slice()) };
+                Some((key, value))
+            }
+        }
     }
 
     fn track_parent_of_missing(&self, mut path: &Path) {
@@ -76,8 +87,6 @@ impl IncludeLoader {
 
     /// Produce a representation of the files accessed, in the format of a ninja depfile
     /// or the output of `cpp -MD` or `makedepend`.
-    /// TODO: make this osstr clean?
-    /// TODO: escape space and backslash
     pub fn write_depfile(&self, goal: &str) -> String {
         let mut files: Vec<_> = self.file_contents.lock().unwrap().keys().cloned().collect();
         files.sort();
@@ -90,12 +99,13 @@ impl IncludeLoader {
             .collect();
         dirs.sort();
         let mut out = String::new();
-        _ = write!(out, "{goal}:");
+        let escape = |s: &str| s.replace(' ', "\\ ");
+        _ = write!(out, "{}:", escape(goal));
         for f in files {
-            _ = write!(out, " {}", f.display());
+            _ = write!(out, " {}", escape(&f.to_string_lossy()));
         }
         for d in dirs {
-            _ = write!(out, " {}", d.display());
+            _ = write!(out, " {}", escape(&d.to_string_lossy()));
         }
         _ = writeln!(out);
         out
