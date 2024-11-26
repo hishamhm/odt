@@ -1,9 +1,17 @@
 use std::io::Write;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let filename = std::env::args().nth(1).unwrap();
-    let source = std::fs::read_to_string(filename)?;
-    let ast = dtsp::parse::parse(&source);
+    // TODO: use clap here
+    let mut include_path = vec![];
+    let mut args = std::env::args().skip(1).peekable();
+    while args.peek().map(|s| s == "-i" || s == "--include") == Some(true) {
+        args.next();
+        include_path.push(std::path::PathBuf::from(args.next().unwrap()));
+    }
+    let filename = args.next().unwrap();
+    let loader = dtsp::fs::IncludeLoader::new(include_path);
+    let path = std::path::PathBuf::from(filename);
+    let ast = dtsp::parse::parse_with_includes(&loader, &path)?;
     let root = dtsp::eval::eval(ast)?;
     eprintln!("{root:#?}");
     let dtb = dtsp::flat::serialize(&root);

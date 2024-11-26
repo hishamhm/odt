@@ -39,6 +39,19 @@ impl IncludeLoader {
         None
     }
 
+    /// XXX Ugh, this wants to return Result<Option>> because we shouldn't keep scanning other
+    /// paths if we find invalid UTF-8.
+    pub fn find_utf8(&self, relative_to: Option<&Path>, included_path: &Path) -> Option<(&Path, &str)> {
+        let search_path = self.search_path.iter().map(PathBuf::as_ref);
+        for dir in relative_to.into_iter().chain(search_path) {
+            let path = dir.join(included_path);
+            if let Some(result) = self.read_utf8(path) {
+                return Some(result);
+            }
+        }
+        None
+    }
+
     /// Read and cache a file.  If successful, the return value is a reference to
     /// the path and the data (both owned by `self`).  Otherwise `None` is returned.
     pub fn read<'a>(&'a self, path: PathBuf) -> Option<(&'a Path, &'a [u8])> {
@@ -64,6 +77,16 @@ impl IncludeLoader {
                 let value = unsafe { core::mem::transmute(value.as_slice()) };
                 Some((key, value))
             }
+        }
+    }
+
+    pub fn read_utf8<'a>(&'a self, path: PathBuf) -> Option<(&'a Path, &'a str)> {
+        let Some((path, bytes)) = self.read(path) else {
+            return None;
+        };
+        match core::str::from_utf8(bytes) {
+            Ok(s) => Some((path, s)),
+            Err(_) => panic!("path {path:?} did not contain valid UTF-8"),
         }
     }
 

@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct EvalError(String);
+// TODO: need a Span in this error
 
 impl core::fmt::Display for EvalError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
