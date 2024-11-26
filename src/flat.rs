@@ -66,6 +66,7 @@ enum FdtToken {
     BeginNode = 1,
     EndNode = 2,
     Prop = 3,
+    #[allow(dead_code)]
     Nop = 4,
     End = 9,
 }

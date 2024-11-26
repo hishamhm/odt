@@ -2,7 +2,7 @@
 
 use crate::parse::rules::NodeContents;
 use crate::parse::Dts;
-use crate::{Node, Property};
+use crate::Node;
 use std::collections::HashMap;
 
 // TODO: evaluate arithmetic expressions
@@ -23,7 +23,8 @@ impl std::error::Error for EvalError {}
 // TODO: would really like typed_derive to produce enums from simple sum rules.
 // it doesn't appear to do that even with a trivial grammar; I guess the `span` field would have to
 // be duplicated into each variant.
-// https://github.com/pest-parser/pest/issues/882 doesn't mention enums.
+// Ah, the `content` field is a a typedef enum with variants _0, _1, _2... ugly.
+// See what pest3 looks like.
 
 pub fn eval(dts: Dts) -> Result<Node, EvalError> {
     let mut t = TempTree::default();
@@ -59,6 +60,7 @@ pub fn eval(dts: Dts) -> Result<Node, EvalError> {
 struct TempTree {
     // TODO: all kinds of labels share one namespace!
     node_labels: HashMap<String, String>,
+    // TODO: use something more efficient so construction is not quadratic
     root: Node,
 }
 
@@ -129,9 +131,6 @@ impl TempTree {
                 let contents = childnode.NodeBody().NodeContents();
                 let path = String::from(path) + "/" + name;
                 Self::_process_node(node_labels, child, &path, contents)?;
-                // TODO: this adds labels in a different order than they appear in the source code.
-                // might make error messages worse, or hide errors if a child both adds and deletes
-                // a conflicting label.
                 for label in labels {
                     Self::_add_label(node_labels, label, &path)?;
                 }
@@ -145,12 +144,11 @@ impl TempTree {
         for def in contents.PropDef() {
             if let Some(prop) = def.Prop() {
                 let name = prop.PropName().span.as_str();
+                let value = node.add_property(name);
                 // TODO: evaluate value
-                // TODO: replace if exists
-                node.properties.push(Property {
-                    name: name.to_owned(),
-                    value: b"todo".into(),
-                });
+                // XXX: can't evaluate label references until we have the whole tree, so we need
+                // another pass
+                *value = b"todo".into();
             }
             if let Some(delprop) = def.DelProp() {
                 let name = delprop.PropName().span.as_str();
@@ -161,10 +159,7 @@ impl TempTree {
     }
 
     fn add_label(&mut self, label: &str, path: &str) -> Result<(), EvalError> {
-        if let Some(old) = self.node_labels.insert(label.to_owned(), path.into()) {
-            return Err(EvalError(format!("label {label:?} already set to {old:?}")));
-        }
-        Ok(())
+        Self::_add_label(&mut self.node_labels, label, path)
     }
 
     fn _add_label(
@@ -173,7 +168,20 @@ impl TempTree {
         path: &str,
     ) -> Result<(), EvalError> {
         if let Some(old) = node_labels.insert(label.to_owned(), path.into()) {
-            return Err(EvalError(format!("label {label:?} already set to {old:?}")));
+            // dtc permits duplicate labels during evaluation, as long as only one survives.
+            // This is accepted:
+            //   / {
+            //     x: a { };
+            //     x: b { };
+            //   };
+            //   /delete-node/ &x;
+            // Unclear if we need to emulate this.
+            if old != path {
+                // TODO: get a span into this error
+                return Err(EvalError(format!(
+                    "Duplicate label: {label:?} already set to {old:?}"
+                )));
+            }
         }
         Ok(())
     }

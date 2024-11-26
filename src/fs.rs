@@ -39,8 +39,8 @@ impl IncludeLoader {
         None
     }
 
-    /// XXX Ugh, this wants to return Result<Option>> because we shouldn't keep scanning other
-    /// paths if we find invalid UTF-8.
+    // XXX Ugh, this wants to return `Result<Option>` because we shouldn't keep scanning other
+    // paths if we find invalid UTF-8.
     pub fn find_utf8(&self, relative_to: Option<&Path>, included_path: &Path) -> Option<(&Path, &str)> {
         let search_path = self.search_path.iter().map(PathBuf::as_ref);
         for dir in relative_to.into_iter().chain(search_path) {

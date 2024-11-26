@@ -52,7 +52,8 @@ impl Node {
     }
 
     fn add_child(&mut self, name: &str) -> &mut Node {
-        // work around https://github.com/rust-lang/rust/issues/21906
+        // Work around https://github.com/rust-lang/rust/issues/21906 by
+        // searching before creating a mutable reference.
         for (index, child) in self.children.iter().enumerate() {
             if child.name == name {
                 return &mut self.children[index];
@@ -63,5 +64,18 @@ impl Node {
             ..Default::default()
         });
         return self.children.last_mut().unwrap();
+    }
+
+    fn add_property(&mut self, name: &str) -> &mut Vec<u8> {
+        for (index, property) in self.properties.iter().enumerate() {
+            if property.name == name {
+                return &mut self.properties[index].value;
+            }
+        }
+        self.properties.push(Property {
+            name: name.to_owned(),
+            ..Default::default()
+        });
+        return &mut self.properties.last_mut().unwrap().value;
     }
 }

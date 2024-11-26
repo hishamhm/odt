@@ -108,6 +108,8 @@ PropName = @{ "\\"? ~ propchar+ }
 // dtc accepts all of these during parsing; later validation forbids some.
 propchar = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
 
+// TODO: https://github.com/pest-parser/pest/discussions/885#discussioncomment-6487467
+// says this is expensive
 PropValue = { (Value ~ Comma)* ~ Value }
 Comma = { "," }
 Value = { Label* ~ (Cells | QuotedString | NodeReference | ByteString | Incbin) ~ Label* }
