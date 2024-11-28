@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+hashlink = "0.9.1"
 pest = "2.7.14"
 pest_derive = "2.7.14"
 pest_typed = "0.16.0"

@@ -47,9 +47,11 @@ pub fn parse_with_includes<'a>(
         return Err(ParseError(format!("can't read {path:?}")));
     };
     let dts = parse(src);
+    // make an empty container to receive the merged tree
     let mut out = dts.clone();
-    // clear Includes and TopDefs
+    out.content.0.matched.content.clear();
     out.content.1.matched.content.clear();
+    out.content.2.matched.content.clear();
     out.content.3.matched.content.clear();
     _visit_includes(loader, path, dts, &mut out)?;
     Ok(out)
@@ -81,10 +83,12 @@ fn _visit_includes<'a>(
         let dts = parse(src);
         _visit_includes(loader, ipath, dts, out)?;
     }
-    for _memreserve in dts.Memreserve() {
-        todo!()
-    }
-    // accumulate TopDefs
+    // TODO: copy headers and memreserves as well.  let parser deal with them.
+    // accumulate fields into the output, other than Includes (tuple element 1)
+    let it = dts.content.0.matched.content.drain(..);
+    out.content.0.matched.content.extend(it);
+    let it = dts.content.2.matched.content.drain(..);
+    out.content.2.matched.content.extend(it);
     let it = dts.content.3.matched.content.drain(..);
     out.content.3.matched.content.extend(it);
     Ok(())
