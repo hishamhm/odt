@@ -6,8 +6,6 @@ pub mod parse;
 pub mod parse_untyped;
 pub mod print;
 
-// TODO:  should this represent labels?  phandles?
-
 #[derive(Debug, Default)]
 pub struct Node {
     pub name: String,

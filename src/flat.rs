@@ -5,8 +5,8 @@ use crate::Node;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
-// TODO: /memreserve/ not supported
-
+/// Construct a DTB.
+/// Memory reservations are not supported.
 pub fn serialize(root: &Node) -> Vec<u8> {
     let mut out = Vec::<u8>::new();
     let mut strings = StringTable::default();

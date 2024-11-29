@@ -7,9 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 /// A stateful helper for loading source files from a list of include directories to be searched.
-/// TODO: look at clang::FileManager and clang::HeaderSearch
-/// TODO: make this "FileLoader" and put the initial file in it too.  will simplify lifetimes.
-pub struct IncludeLoader {
+pub struct Loader {
     /// The list of directories to search
     search_path: Vec<PathBuf>,
     /// cache of previously loaded files
@@ -18,7 +16,7 @@ pub struct IncludeLoader {
     parents_of_missing: Mutex<HashSet<PathBuf>>,
 }
 
-impl IncludeLoader {
+impl Loader {
     pub fn new(search_path: Vec<PathBuf>) -> Self {
         Self {
             search_path,

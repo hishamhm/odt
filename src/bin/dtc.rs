@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         include_path.push(std::path::PathBuf::from(args.next().unwrap()));
     }
     let filename = args.next().unwrap();
-    let loader = dtsp::fs::IncludeLoader::new(include_path);
+    let loader = dtsp::fs::Loader::new(include_path);
     let path = std::path::PathBuf::from(filename);
     let ast = dtsp::parse::parse_with_includes(&loader, &path).map_err(|e| loader.infer_path(e))?;
     let root = dtsp::eval::eval(ast).map_err(|e| loader.infer_path(e))?;

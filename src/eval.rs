@@ -10,15 +10,13 @@ use crate::{Node, Property};
 use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
 
-// TODO: would really like typed_derive to produce enums from simple sum rules.
-// it doesn't appear to do that even with a trivial grammar; I guess the `span` field would have to
-// be duplicated into each variant.
-// Ah, the `content` field is a a typedef enum with variants _0, _1, _2... ugly.
-// See what pest3 looks like.
-
 pub fn eval(dts: Dts) -> Result<Node, SourceError> {
     // Transform the AST into a single tree of TempNodes.  This phase handles deletions of nodes
-    // and properties, property overrides, and label assignments.
+    // and properties, property overrides, and label assignments.  Note that we may delete invalid
+    // constructs without evaluating them.  For example, we accept
+    //   / { x = <(0 / 0)>; };
+    //   / { /delete-property/ x; };
+    // while `dtc` does not.
     let (mut root, node_labels) = build_temp_tree(dts)?;
 
     // Assign phandles.
@@ -107,9 +105,16 @@ fn visit_phandle_references(
 ) -> Result<(), SourceError> {
     for (_, tempvalue) in &node.properties {
         if let TempValue::Ast(propvalue) = tempvalue {
-            for noderef in extract_phandle_references(propvalue) {
-                let target = labels.resolve(&noderef)?;
-                need_phandles.replace(target);
+            let values = propvalue.Value();
+            for value in [values.0].into_iter().chain(values.1) {
+                if let Some(cells) = value.Cells() {
+                    for cell in cells.Cell().into_iter().flatten() {
+                        if let Some(phandle) = cell.NodeReference() {
+                            let target = labels.resolve(&phandle)?;
+                            need_phandles.replace(target);
+                        }
+                    }
+                }
             }
         }
     }
@@ -118,22 +123,6 @@ fn visit_phandle_references(
         visit_phandle_references(labels, &tempnode, &child_path, need_phandles)?;
     }
     Ok(())
-}
-
-// TODO: consider inlining this function
-fn extract_phandle_references<'a>(propvalue: &PropValue<'a>) -> Vec<NodeReference<'a>> {
-    let mut r = vec![];
-    let values = propvalue.Value();
-    for value in [values.0].into_iter().chain(values.1) {
-        if let Some(cells) = value.Cells() {
-            for cell in cells.Cell().into_iter().flatten() {
-                if let Some(phandle) = cell.NodeReference() {
-                    r.push(phandle.clone());
-                }
-            }
-        }
-    }
-    r
 }
 
 fn evaluate_expressions(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), SourceError> {
