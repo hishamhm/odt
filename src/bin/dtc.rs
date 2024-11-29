@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::path::PathBuf::from(filename);
     let ast = dtsp::parse::parse_with_includes(&loader, &path)?;
     let root = dtsp::eval::eval(ast)?;
-    eprintln!("{root:#?}");
+    // XXX eprintln!("{root:#?}");
     let dtb = dtsp::flat::serialize(&root);
     std::io::stdout().write_all(&dtb)?;
     Ok(())
