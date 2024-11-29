@@ -1,7 +1,10 @@
 //! Facilities for parsing DTS files and expanding "/include/" directives.
 
+use crate::error::SourceError;
+use crate::fs::IncludeLoader;
 use pest_typed::TypedParser;
 use pest_typed_derive::TypedParser;
+use std::path::Path;
 
 #[derive(TypedParser)]
 #[grammar = "dts.pest"]
@@ -12,7 +15,7 @@ struct DtsParser;
 pub use crate::parse::rules::Dts;
 use crate::parse::rules::*;
 
-// TODO: expose errors
+// XXX expose errors
 pub fn parse(source: &str) -> Dts {
     match DtsParser::try_parse::<DtsFile>(&source) {
         Ok(dtsfile) => dtsfile.Dts().clone(),
@@ -24,27 +27,15 @@ pub fn parse(source: &str) -> Dts {
     }
 }
 
-use crate::fs::IncludeLoader;
-use std::path::Path;
-
-#[derive(Debug)]
-pub struct ParseError(String);
-// TODO: need a Span in this error
-
-impl core::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "ParseError({:?})", self.0)
-    }
-}
-
-impl std::error::Error for ParseError {}
-
 pub fn parse_with_includes<'a>(
     loader: &'a IncludeLoader,
     path: &'_ Path,
-) -> Result<Dts<'a>, ParseError> {
-    let Some((_, src)) = loader.read_utf8(path.to_owned()) else {
-        return Err(ParseError(format!("can't read {path:?}")));
+) -> Result<Dts<'a>, SourceError> {
+    let Some((_, src)) = loader.read_utf8(path.into()) else {
+        // TODO:  presumably there is some kind of filesystem error we could propagate
+        return Err(SourceError::new_unattributed(format!(
+            "can't load file {path:?}"
+        )));
     };
     let dts = parse(src);
     // make an empty container to receive the merged tree
@@ -62,23 +53,12 @@ fn _visit_includes<'a>(
     path: &'_ Path,
     mut dts: Dts<'a>,
     out: &'_ mut Dts<'a>,
-) -> Result<(), ParseError> {
+) -> Result<(), SourceError> {
     let dir = Some(path.parent().unwrap());
     for include in dts.Include() {
         let ipath = include.IncludePath().span.as_str().trim_matches('"');
         let Some((ipath, src)) = loader.find_utf8(dir, &Path::new(ipath)) else {
-            // convert pest_typed::Span to pest::Span
-            let s = include.span;
-            let span = pest::Span::new(s.get_input(), s.start(), s.end()).unwrap();
-            let error = pest::error::Error::<()>::new_from_span(
-                pest::error::ErrorVariant::CustomError {
-                    message: format!("can't find include {ipath:?}"),
-                },
-                span,
-            );
-            // TODO: the formatter for `pest::Error` is nice, but lacks the source path.
-            panic!("in {path:?}:\n{error}");
-            // TODO: return Err(ParseError(format!("can't find include {ipath:?}")));
+            return Err(include.err("can't find include file on search path".into()));
         };
         let dts = parse(src);
         _visit_includes(loader, ipath, dts, out)?;
@@ -105,3 +85,20 @@ fn _visit_includes<'a>(
 // / { /delete-property/ x; };
 //
 // should be accepted, although `dtc` rejects this.
+
+pub trait SpannedExt<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> {
+    fn str(&self) -> &'a str;
+    fn err(&self, message: String) -> SourceError;
+}
+
+impl<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> SpannedExt<'a, R, T> for T {
+    fn str(&self) -> &'a str {
+        self.span().as_str()
+    }
+    fn err(&self, message: String) -> SourceError {
+        // convert pest_typed::Span to pest::Span
+        let s = self.span();
+        let span = pest::Span::new(s.get_input(), s.start(), s.end()).unwrap();
+        SourceError::new(message, span)
+    }
+}

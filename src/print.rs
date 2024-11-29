@@ -1,5 +1,5 @@
 use crate::parse_untyped::{Rule, Tree};
-use std::fmt::Write;
+use core::fmt::Write;
 
 pub fn format(dts: Tree) -> String {
     let mut pretty = PrettyPrinter::new();
@@ -47,7 +47,7 @@ impl IndentingWriter {
 }
 
 impl Write for IndentingWriter {
-    fn write_str(&mut self, input: &str) -> std::fmt::Result {
+    fn write_str(&mut self, input: &str) -> core::fmt::Result {
         let mut first = true;
         for line in input.split('\n') {
             if !first {
@@ -167,7 +167,7 @@ fn split_testdata(text: &str) -> Vec<String> {
 
 #[test]
 fn test_format() {
-    for (index, (input, expected)) in std::iter::zip(
+    for (index, (input, expected)) in core::iter::zip(
         split_testdata(include_str!("testdata/format.in")),
         split_testdata(include_str!("testdata/format.out")),
     )

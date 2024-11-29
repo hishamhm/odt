@@ -1,7 +1,8 @@
 //! Facilities for reading sources from the filesystem.
 
+use crate::error::SourceError;
+use core::fmt::Write;
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -41,7 +42,11 @@ impl IncludeLoader {
 
     // XXX Ugh, this wants to return `Result<Option>` because we shouldn't keep scanning other
     // paths if we find invalid UTF-8.
-    pub fn find_utf8(&self, relative_to: Option<&Path>, included_path: &Path) -> Option<(&Path, &str)> {
+    pub fn find_utf8(
+        &self,
+        relative_to: Option<&Path>,
+        included_path: &Path,
+    ) -> Option<(&Path, &str)> {
         let search_path = self.search_path.iter().map(PathBuf::as_ref);
         for dir in relative_to.into_iter().chain(search_path) {
             let path = dir.join(included_path);
@@ -102,7 +107,7 @@ impl IncludeLoader {
                 return;
             }
             if path.exists() {
-                parents_of_missing.insert(path.to_owned());
+                parents_of_missing.insert(path.into());
                 return;
             }
         }
@@ -132,5 +137,18 @@ impl IncludeLoader {
         }
         _ = writeln!(out);
         out
+    }
+
+    pub fn infer_path(&self, mut err: SourceError) -> SourceError {
+        for (path, bytes) in self.file_contents.lock().unwrap().iter() {
+            if let Some(bytes) = bytes {
+                if bytes.as_ptr_range() == err.buffer {
+                    err.pest_error = err.pest_error.with_path(&path.to_string_lossy());
+                    return err;
+                }
+            }
+        }
+        err.pest_error = err.pest_error.with_path("<unknown>");
+        err
     }
 }

@@ -2,6 +2,7 @@
 //! also known as a Devicetree Blob (DTB).
 
 use crate::Node;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 // TODO: /memreserve/ not supported
@@ -136,8 +137,19 @@ struct StringTable {
 
 impl StringTable {
     fn intern(&mut self, s: &str) -> u32 {
-        let entry = self.map.entry(s.to_owned());
-        *entry.or_insert_with(|| self.block.write_string(s))
+        let r = match self.map.entry(s.into()) {
+            Entry::Occupied(entry) => return *entry.get(),
+            Entry::Vacant(entry) => *entry.insert(self.block.write_string(s)),
+        };
+        // Also insert each suffix which wasn't already present.  `dtc` implements this
+        // optimization, so it eases comparing DTB output if we do it too.
+        for (i, _) in s.char_indices().skip(1) {
+            match self.map.entry(s[i..].into()) {
+                Entry::Occupied(_) => break,
+                Entry::Vacant(entry) => *entry.insert(r + i as u32),
+            };
+        }
+        r
     }
     fn serialize(&self, out: &mut Vec<u8>) {
         out.extend_from_slice(&self.block);

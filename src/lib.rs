@@ -1,3 +1,4 @@
+pub mod error;
 pub mod eval;
 pub mod flat;
 pub mod fs;

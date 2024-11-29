@@ -3,23 +3,12 @@
 // XXX
 #![allow(unused_variables)]
 
-use crate::parse::rules::{IntLiteral, NodeContents, PropValue};
-use crate::parse::Dts;
+use crate::error::SourceError;
+use crate::parse::rules::{IntLiteral, Label, NodeContents, NodeReference, PropValue};
+use crate::parse::{Dts, SpannedExt};
 use crate::{Node, Property};
+use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
-use std::str::FromStr;
-
-#[derive(Debug)]
-pub struct EvalError(String);
-// TODO: need a Span in this error
-
-impl core::fmt::Display for EvalError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "EvalError({:?})", self.0)
-    }
-}
-
-impl std::error::Error for EvalError {}
 
 // TODO: would really like typed_derive to produce enums from simple sum rules.
 // it doesn't appear to do that even with a trivial grammar; I guess the `span` field would have to
@@ -27,7 +16,7 @@ impl std::error::Error for EvalError {}
 // Ah, the `content` field is a a typedef enum with variants _0, _1, _2... ugly.
 // See what pest3 looks like.
 
-pub fn eval(dts: Dts) -> Result<Node, EvalError> {
+pub fn eval(dts: Dts) -> Result<Node, SourceError> {
     // Transform the AST into a single tree of TempNodes.  This phase handles deletions of nodes
     // and properties, property overrides, and label assignments.
     let (mut root, node_labels) = build_temp_tree(dts)?;
@@ -42,7 +31,7 @@ pub fn eval(dts: Dts) -> Result<Node, EvalError> {
     Ok(from_temp_tree(root))
 }
 
-fn build_temp_tree(dts: Dts) -> Result<(TempNode, LabelMap), EvalError> {
+fn build_temp_tree(dts: Dts) -> Result<(TempNode, LabelMap), SourceError> {
     let mut root = TempNode::default();
     let mut node_labels = LabelMap::new();
     for _memres in dts.Memreserve() {
@@ -51,33 +40,26 @@ fn build_temp_tree(dts: Dts) -> Result<(TempNode, LabelMap), EvalError> {
     for topdef in dts.TopDef() {
         if let Some(topnode) = topdef.TopNode() {
             let path = match topnode.TopNodeName().NodeReference() {
-                Some(noderef) => LabelResolver(&node_labels, &root).resolve(noderef.str())?,
+                Some(noderef) => LabelResolver(&node_labels, &root).resolve(noderef)?,
                 None => NodePath::root(),
             };
-            let labels = topnode
-                .Label()
-                .into_iter()
-                .map(|n| n.str().trim_end_matches(':'));
-            let contents = topnode.NodeBody().NodeContents();
             let node = root.walk_mut(path.segments()).unwrap();
-            fill_temp_node(&mut node_labels, node, &path, contents)?;
-            // TODO: this adds labels in a different order than they appear in the source code.
-            // might make error messages worse, or hide errors if a child both adds and deletes
-            // a conflicting label.
-            for label in labels {
+            for label in topnode.Label() {
                 add_label(&mut node_labels, label, &path)?;
             }
+            let contents = topnode.NodeBody().NodeContents();
+            fill_temp_node(&mut node_labels, node, &path, contents)?;
         }
         if let Some(topdelnode) = topdef.TopDelNode() {
             let noderef = topdelnode.NodeReference();
-            let target = LabelResolver(&node_labels, &root).resolve(noderef.str())?;
+            let target = LabelResolver(&node_labels, &root).resolve(noderef)?;
             delete_node(&mut node_labels, &mut root, &target);
         }
     }
     Ok((root, node_labels))
 }
 
-fn assign_phandles(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), EvalError> {
+fn assign_phandles(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), SourceError> {
     let mut need_phandles = LinkedHashSet::<NodePath>::new();
     visit_phandle_references(
         LabelResolver(node_labels, root),
@@ -95,23 +77,18 @@ fn assign_phandles(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), Ev
         });
         match phandle {
             TempValue::Bytes(bytes) => {
-                let len = bytes.len();
-                if len != 4 {
-                    return Err(EvalError(format!(
-                        "phandle for {path} has invalid length {len}"
-                    )));
-                }
+                // This must be a phandle we previously assigned.
+                // TODO: it could be an empty property.  how do we get a span to report the error
+                // in that case?  maybe store the whole Prop node in TempValue?
+                assert_eq!(bytes.len(), 4);
                 let phv = u32::from_be_bytes(bytes[..].try_into().unwrap());
-                if phv == 0 || phv == !0u32 {
-                    return Err(EvalError(format!(
-                        "phandle for {path} has invalid value {phv}"
-                    )));
-                }
+                assert_ne!(phv, 0);
+                assert_ne!(phv, !0u32);
             }
-            TempValue::Ast(_ast) => {
+            TempValue::Ast(ast) => {
                 // the expression here must have length 4, and may contain zero phandle references,
                 // or one, pointing to itself.
-                todo!();
+                todo!("{}", ast.err("unimplemented".into()));
                 // TODO: also repeat the byte checks above once it is evaluated.
                 // maybe move all this validation to a later pass.
                 // but do have to detect self-reference now to number correctly.
@@ -119,7 +96,6 @@ fn assign_phandles(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), Ev
         }
     }
 
-    // TODO
     Ok(())
 }
 
@@ -128,12 +104,12 @@ fn visit_phandle_references(
     node: &TempNode,
     path: &NodePath,
     need_phandles: &mut LinkedHashSet<NodePath>,
-) -> Result<(), EvalError> {
+) -> Result<(), SourceError> {
     for (_, tempvalue) in &node.properties {
         if let TempValue::Ast(propvalue) = tempvalue {
             for noderef in extract_phandle_references(propvalue) {
-                let target = labels.resolve(noderef)?;
-                need_phandles.insert(target);
+                let target = labels.resolve(&noderef)?;
+                need_phandles.replace(target);
             }
         }
     }
@@ -144,14 +120,15 @@ fn visit_phandle_references(
     Ok(())
 }
 
-fn extract_phandle_references<'a>(propvalue: &PropValue<'a>) -> Vec<&'a str> {
+// TODO: consider inlining this function
+fn extract_phandle_references<'a>(propvalue: &PropValue<'a>) -> Vec<NodeReference<'a>> {
     let mut r = vec![];
     let values = propvalue.Value();
     for value in [values.0].into_iter().chain(values.1) {
         if let Some(cells) = value.Cells() {
             for cell in cells.Cell().into_iter().flatten() {
-                if let Some(phandle) = cell.Phandle() {
-                    r.push(phandle.str());
+                if let Some(phandle) = cell.NodeReference() {
+                    r.push(phandle.clone());
                 }
             }
         }
@@ -159,7 +136,7 @@ fn extract_phandle_references<'a>(propvalue: &PropValue<'a>) -> Vec<&'a str> {
     r
 }
 
-fn evaluate_expressions(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), EvalError> {
+fn evaluate_expressions(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), SourceError> {
     // XXX here we have an ownership problem, because we need the shape of the tree to evaluate
     // label and phandle references, but we also need to mutate the propvalues.
     // could maybe use Cell to hold the temp values?
@@ -171,7 +148,7 @@ fn _evaluate_expressions(
     root: &TempNode,
     node_labels: &LabelMap,
     node: &mut TempNode,
-) -> Result<(), EvalError> {
+) -> Result<(), SourceError> {
     for (_, tempvalue) in &mut node.properties {
         if let TempValue::Bytes(_) = tempvalue {
             continue;
@@ -191,7 +168,7 @@ fn evaluate_propvalue(
     root: &TempNode,
     node_labels: &LabelMap,
     propvalue: PropValue,
-) -> Result<Vec<u8>, EvalError> {
+) -> Result<Vec<u8>, SourceError> {
     let mut r = vec![];
     let values = propvalue.Value();
     for value in [values.0].into_iter().chain(values.1) {
@@ -200,8 +177,8 @@ fn evaluate_propvalue(
                 todo!()
             }
             for cell in cells.Cell().into_iter().flatten() {
-                if let Some(phandle) = cell.Phandle() {
-                    let path = LabelResolver(node_labels, root).resolve(phandle.str())?;
+                if let Some(phandle) = cell.NodeReference() {
+                    let path = LabelResolver(node_labels, root).resolve(phandle)?;
                     let node = root.walk(path.segments()).unwrap();
                     let phandle = &node.properties["phandle"];
                     let TempValue::Bytes(bytes) = phandle else {
@@ -228,7 +205,7 @@ fn evaluate_propvalue(
             r.push(0);
         }
         if let Some(noderef) = value.NodeReference() {
-            let target = LabelResolver(node_labels, root).resolve(noderef.str())?;
+            let target = LabelResolver(node_labels, root).resolve(noderef)?;
             r.extend(target.display().as_bytes());
             r.push(0);
         }
@@ -258,14 +235,30 @@ fn unescape(s: &str) -> Option<String> {
     Some(r)
 }
 
-// TODO: needs a parameterized return type?
-fn parse_literal(lit: &IntLiteral) -> Result<u32, EvalError> {
+// TODO: needs a parameterized return type for /bits/?
+fn parse_literal(lit: &IntLiteral) -> Result<u32, SourceError> {
     let s = lit.str();
     if s.starts_with("'") {
         todo!();
     }
-    let st = s.trim_end_matches(['U', 'L']); // dtc is case-sensitive here
-    u32::from_str(st).map_err(|_| EvalError(format!("invalid numeric literal {s:?}")))
+    let s = s.trim_end_matches(['U', 'L']); // dtc is case-sensitive here
+    let n = parse_int(s).ok_or_else(|| lit.err("invalid numeric literal".into()))?;
+    // XXX dtc only requires that upper bits match; sign-extending a negative number is OK
+    u32::try_from(n).map_err(|_| lit.err("numeric literal exceeds 32 bits".into()))
+}
+
+fn parse_int(s: &str) -> Option<u64> {
+    // TODO:  It would be nice to permit underscores or other digit separators.
+    //        The grammar would need update too.
+    if s == "0" {
+        Some(0)
+    } else if let Some(hex) = s.strip_prefix("0x").or(s.strip_prefix("0X")) {
+        u64::from_str_radix(hex, 16).ok()
+    } else if let Some(oct) = s.strip_prefix('0') {
+        u64::from_str_radix(oct, 8).ok()
+    } else {
+        u64::from_str_radix(s, 10).ok()
+    }
 }
 
 fn from_temp_tree(root: TempNode) -> Node {
@@ -342,14 +335,14 @@ impl NodePath {
     }
 }
 
-impl std::fmt::Debug for NodePath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for NodePath {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl std::fmt::Display for NodePath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for NodePath {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -368,6 +361,9 @@ impl Default for TempValue<'_> {
     }
 }
 
+/// An intermediate representation used to gather deletes and overrides.  We used an
+/// order-preserving container to stay closer to the input.  (This doesn't match `dtc` perfectly in
+/// the presence of deletes, because it implements all deletes via tombstones.)
 #[derive(Clone, Default)]
 struct TempNode<'a> {
     properties: LinkedHashMap<String, TempValue<'a>>,
@@ -395,10 +391,11 @@ impl<'a> TempNode<'a> {
     }
 
     fn add_child(&mut self, name: &str) -> &mut TempNode<'a> {
-        // TODO: hashlink reorders on hit, probably don't want that
-        self.children
-            .entry(name.into())
-            .or_insert_with(|| Default::default())
+        // Avoid `Entry::or_insert_with()` because on LinkedHashMap that reorders existing entries.
+        match self.children.entry(name.into()) {
+            Entry::Vacant(entry) => entry.insert(TempNode::default()),
+            Entry::Occupied(entry) => entry.into_mut(),
+        }
     }
 
     fn get_property_or_insert_with(
@@ -406,8 +403,11 @@ impl<'a> TempNode<'a> {
         name: &str,
         default: impl FnOnce() -> TempValue<'a>,
     ) -> &mut TempValue<'a> {
-        // TODO: hashlink reorders on hit, probably don't want that
-        self.properties.entry(name.into()).or_insert_with(default)
+        // Avoid `Entry::or_insert_with()` because on LinkedHashMap that reorders existing entries.
+        match self.properties.entry(name.into()) {
+            Entry::Vacant(entry) => entry.insert(default()),
+            Entry::Occupied(entry) => entry.into_mut(),
+        }
     }
 
     fn set_property(&mut self, name: &str, value: TempValue<'a>) {
@@ -427,12 +427,12 @@ impl<'a> TempNode<'a> {
 struct LabelResolver<'a>(&'a LabelMap, &'a TempNode<'a>);
 
 impl LabelResolver<'_> {
-    fn resolve(&self, noderef: &str) -> Result<NodePath, EvalError> {
-        self._resolve(noderef)
-            .ok_or_else(|| EvalError(format!("can't resolve node reference {noderef:?}")))
+    fn resolve(&self, noderef: &NodeReference) -> Result<NodePath, SourceError> {
+        self.resolve_str(noderef.str())
+            .ok_or_else(|| noderef.err(format!("can't resolve node reference")))
     }
 
-    fn _resolve(&self, noderef: &str) -> Option<NodePath> {
+    fn resolve_str(&self, noderef: &str) -> Option<NodePath> {
         let path = noderef.trim_matches(&['&', '{', '}']);
         let mut segments = path.split('/');
         let first = segments.next().unwrap();
@@ -461,7 +461,7 @@ fn delete_node(node_labels: &mut LabelMap, root: &mut TempNode, path: &NodePath)
     if path.is_root() {
         // delete everything
         node_labels.clear();
-        *root = Default::default();
+        *root = TempNode::default();
         return;
     }
     node_labels.retain(|_, p| !p.starts_with(&path));
@@ -475,22 +475,17 @@ fn fill_temp_node<'a, 'b: 'a>(
     node: &mut TempNode<'a>,
     path: &NodePath,
     contents: &NodeContents<'b>,
-) -> Result<(), EvalError> {
+) -> Result<(), SourceError> {
     for def in contents.ChildDef() {
         if let Some(childnode) = def.ChildNode() {
             let name = childnode.NodeName().str();
-            let child = node.add_child(name);
-            let labels = childnode
-                .Label()
-                .into_iter()
-                .flatten()
-                .map(|n| n.str().trim_end_matches(':'));
-            let contents = childnode.NodeBody().NodeContents();
             let child_path = path.join(name);
-            fill_temp_node(node_labels, child, &child_path, contents)?;
-            for label in labels {
+            let child = node.add_child(name);
+            for label in childnode.Label().into_iter().flatten() {
                 add_label(node_labels, label, &child_path)?;
             }
+            let contents = childnode.NodeBody().NodeContents();
+            fill_temp_node(node_labels, child, &child_path, contents)?;
         }
         if let Some(delnode) = def.DelNode() {
             let name = delnode.NodeName().str();
@@ -516,8 +511,13 @@ fn fill_temp_node<'a, 'b: 'a>(
     Ok(())
 }
 
-fn add_label(node_labels: &mut LabelMap, label: &str, path: &NodePath) -> Result<(), EvalError> {
-    if let Some(old) = node_labels.insert(label.to_owned(), path.clone()) {
+fn add_label(
+    node_labels: &mut LabelMap,
+    label: &Label,
+    path: &NodePath,
+) -> Result<(), SourceError> {
+    let s = label.str().strip_suffix(':').unwrap();
+    if let Some(old) = node_labels.insert(s.into(), path.clone()) {
         // dtc permits duplicate labels during evaluation, as long as only one survives.
         // This is accepted:
         //   / {
@@ -527,21 +527,8 @@ fn add_label(node_labels: &mut LabelMap, label: &str, path: &NodePath) -> Result
         //   /delete-node/ &x;
         // Unclear if we need to emulate this.
         if old != *path {
-            // TODO: get a span into this error
-            return Err(EvalError(format!(
-                "Duplicate label: {label:?} already set to {old:?}"
-            )));
+            return Err(label.err(format!("Duplicate label also on {old:?}")));
         }
     }
     Ok(())
-}
-
-trait SpannedStr<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> {
-    fn str(&self) -> &'a str;
-}
-
-impl<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> SpannedStr<'a, R, T> for T {
-    fn str(&self) -> &'a str {
-        self.span().as_str()
-    }
 }

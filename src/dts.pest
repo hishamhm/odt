@@ -21,7 +21,7 @@
 // outside an atomic rule (introduced with '@' or '$').
 // We need these tokens when pretty-printing, so these rules are not silent.
 WHITESPACE = { " " | "\t" | "\r" | "\n" }
-// XXX why is this ${}?  try removing or pushing down
+// XXX why is this ${}?  is that not implied?  try removing or pushing down
 COMMENT = ${ BlockComment | LineComment }
 BlockComment = { "/*" ~ (BlockComment | !"*/" ~ ANY)* ~ "*/" }
 // Line comments contain their own newline.  (This means we don't accept one at
@@ -118,10 +118,7 @@ Bits = { SlashBits ~ NumericLiteral }
 OpenCells = { "<" }
 CloseCells = { ">" }
 
-Cell = { Phandle | ParenExpr | IntLiteral }
-
-// XXX why this wrapper node?
-Phandle = @{ NodeReference }
+Cell = { NodeReference | ParenExpr | IntLiteral }
 
 // TODO: fix operator precedence with more intermediate nodes
 Expr = { UnaryExpr | BinaryExpr | TernaryExpr | ParenExpr | IntLiteral }
