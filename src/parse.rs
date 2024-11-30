@@ -19,16 +19,9 @@ struct DtsParser;
 pub use crate::parse::rules::Dts;
 use crate::parse::rules::*;
 
-// XXX expose errors
-pub fn parse(source: &str) -> Dts {
-    match DtsParser::try_parse::<DtsFile>(&source) {
-        Ok(dtsfile) => dtsfile.Dts().clone(),
-        // TODO: evaluate quality of error messages from this
-        Err(err) => panic!(
-            "parsing failed:\n{}",
-            err.renamed_rules(|rule| format!("{:?}", rule))
-        ),
-    }
+pub fn parse(source: &str) -> Result<Dts, SourceError> {
+    let dtsfile = DtsParser::try_parse::<DtsFile>(&source)?;
+    Ok(dtsfile.Dts().clone())
 }
 
 pub fn parse_with_includes<'a>(loader: &'a Loader, path: &'_ Path) -> Result<Dts<'a>, SourceError> {
@@ -38,7 +31,7 @@ pub fn parse_with_includes<'a>(loader: &'a Loader, path: &'_ Path) -> Result<Dts
             "can't load file {path:?}"
         )));
     };
-    let dts = parse(src);
+    let dts = parse(src).map_err(|e| e.with_path(path))?;
     // make an empty container to receive the merged tree
     let mut out = dts.clone();
     out.content.0.matched.content.clear();
@@ -61,7 +54,7 @@ fn _visit_includes<'a>(
         let Some((ipath, src)) = loader.find_utf8(dir, &Path::new(ipath)) else {
             return Err(include.err("can't find include file on search path".into()));
         };
-        let dts = parse(src);
+        let dts = parse(src)?;
         _visit_includes(loader, ipath, dts, out)?;
     }
     // accumulate fields into the output, other than Includes (tuple element 1)

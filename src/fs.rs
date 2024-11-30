@@ -137,16 +137,17 @@ impl Loader {
         out
     }
 
-    pub fn infer_path(&self, mut err: SourceError) -> SourceError {
+    pub fn infer_path(&self, err: SourceError) -> SourceError {
+        if err.path().is_some() {
+            return err;
+        }
         for (path, bytes) in self.file_contents.lock().unwrap().iter() {
             if let Some(bytes) = bytes {
                 if bytes.as_ptr_range() == err.buffer {
-                    err.pest_error = err.pest_error.with_path(&path.to_string_lossy());
-                    return err;
+                    return err.with_path(path);
                 }
             }
         }
-        err.pest_error = err.pest_error.with_path("<unknown>");
-        err
+        err.with_path(Path::new("<unknown>"))
     }
 }
