@@ -232,7 +232,8 @@ fn parse_literal(lit: &IntLiteral) -> Result<u32, SourceError> {
     }
     let s = s.trim_end_matches(['U', 'L']); // dtc is case-sensitive here
     let n = parse_int(s).ok_or_else(|| lit.err("invalid numeric literal".into()))?;
-    // XXX dtc only requires that upper bits match; sign-extending a negative number is OK
+    // XXX dtc only requires that upper bits match; sign-extending a negative number is OK.
+    // XXX i think it does this so intermediate arithmetic can be 64-bit.  lazy.
     u32::try_from(n).map_err(|_| lit.err("numeric literal exceeds 32 bits".into()))
 }
 
