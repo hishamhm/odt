@@ -4,11 +4,14 @@
 #![allow(unused_variables)]
 
 use crate::error::SourceError;
-use crate::parse::rules::{IntLiteral, Label, NodeContents, NodeReference, PropValue};
+use crate::parse::rules::{
+    CharLiteral, IntLiteral, Label, NodeContents, NodeReference, PropValue, QuotedString,
+};
 use crate::parse::{Dts, SpannedExt};
 use crate::{Node, Property};
 use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
+use std::borrow::Cow;
 
 pub fn eval(dts: Dts) -> Result<Node, SourceError> {
     // Transform the AST into a single tree of TempNodes.  This phase handles deletions of nodes
@@ -185,12 +188,8 @@ fn evaluate_propvalue(
             }
         }
         if let Some(quotedstring) = value.QuotedString() {
-            // unescape string.  should grammar remove outer quotes?
-            // append to vec, with null.
-            let s = quotedstring.str();
-            let s = s.strip_prefix('"').unwrap().strip_suffix('"').unwrap();
-            let s = unescape(s).unwrap(); // parser has already validated
-            r.extend(s.as_bytes());
+            let bytes = quotedstring.unescape()?;
+            r.extend(&*bytes);
             r.push(0);
         }
         if let Some(noderef) = value.NodeReference() {
@@ -212,24 +211,46 @@ fn evaluate_propvalue(
     Ok(r)
 }
 
-fn unescape(s: &str) -> Option<String> {
-    let mut r = String::new();
-    let mut it = s.chars();
-    while let Some(c) = it.next() {
-        match c {
-            '\\' => r.push(it.next()?),
-            c => r.push(c),
+trait UnescapeExt<'a> {
+    fn unescape(&self) -> Result<Cow<'a, [u8]>, SourceError>;
+}
+
+impl<'a> UnescapeExt<'a> for QuotedString<'a> {
+    fn unescape(&self) -> Result<Cow<'a, [u8]>, SourceError> {
+        self.QuotedSpan().span.unescape()
+    }
+}
+
+impl<'a> UnescapeExt<'a> for CharLiteral<'a, 0> {
+    fn unescape(&self) -> Result<Cow<'a, [u8]>, SourceError> {
+        let r = self.SingleQuotedSpan().span.unescape()?;
+        match r.len() {
+            1 => Ok(r),
+            n => Err(self.err(format!("char literal is {n} bytes, should be one byte"))),
         }
     }
-    Some(r)
+}
+
+impl<'a> UnescapeExt<'a> for pest_typed::Span<'a> {
+    fn unescape(&self) -> Result<Cow<'a, [u8]>, SourceError> {
+        let s = self.as_str();
+        if !s.contains('\\') {
+            return Ok(Cow::Borrowed(s.as_bytes()));
+        }
+        todo!("implement string unescaping");
+        // TODO: dtc accepts \a\b\f\n\r\t\v \000 \x00
+        // The descape crate looks pretty close, but we should report a precise error span.
+        // (Or reconsider having pest validate these.)
+    }
 }
 
 // TODO: needs a parameterized return type for /bits/?
 fn parse_literal(lit: &IntLiteral) -> Result<u32, SourceError> {
-    let s = lit.str();
-    if s.starts_with("'") {
-        todo!();
+    if let Some(c) = lit.CharLiteral() {
+        let bytes = c.unescape()?;
+        return Ok(bytes[0].into());
     }
+    let s = lit.str();
     let s = s.trim_end_matches(['U', 'L']); // dtc is case-sensitive here
     let n = parse_int(s).ok_or_else(|| lit.err("invalid numeric literal".into()))?;
     // XXX dtc only requires that upper bits match; sign-extending a negative number is OK.

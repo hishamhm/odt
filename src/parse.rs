@@ -50,7 +50,8 @@ fn _visit_includes<'a>(
 ) -> Result<(), SourceError> {
     let dir = Some(path.parent().unwrap());
     for include in dts.Include() {
-        let ipath = include.IncludePath().span.as_str().trim_matches('"');
+        let ipath = include.QuotedString().QuotedSpan().str();
+        // The path is not unescaped in any way before use.
         let Some((ipath, src)) = loader.find_utf8(dir, &Path::new(ipath)) else {
             return Err(include.err("can't find include file on search path".into()));
         };
