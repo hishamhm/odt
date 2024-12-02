@@ -53,7 +53,7 @@ fn _visit_includes<'a>(
         let ipath = include.QuotedString().QuotedSpan().str();
         // The path is not unescaped in any way before use.
         let Some((ipath, src)) = loader.find_utf8(dir, &Path::new(ipath)) else {
-            return Err(include.err("can't find include file on search path".into()));
+            return Err(include.err("can't find include file on search path"));
         };
         let dts = parse(src)?;
         _visit_includes(loader, ipath, dts, out)?;
@@ -70,17 +70,17 @@ fn _visit_includes<'a>(
 
 pub trait SpannedExt<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> {
     fn str(&self) -> &'a str;
-    fn err(&self, message: String) -> SourceError;
+    fn err(&self, message: impl Into<String>) -> SourceError;
 }
 
 impl<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> SpannedExt<'a, R, T> for T {
     fn str(&self) -> &'a str {
         self.span().as_str()
     }
-    fn err(&self, message: String) -> SourceError {
+    fn err(&self, message: impl Into<String>) -> SourceError {
         // convert pest_typed::Span to pest::Span
         let s = self.span();
         let span = pest::Span::new(s.get_input(), s.start(), s.end()).unwrap();
-        SourceError::new(message, span)
+        SourceError::new(message.into(), span)
     }
 }

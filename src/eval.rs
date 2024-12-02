@@ -1,13 +1,8 @@
 //! Facilities for converting a parsed Devicetree Source file into a tree of nodes.
 
-// XXX
-#![allow(unused_variables)]
-
 use crate::error::SourceError;
-use crate::parse::rules::{
-    CharLiteral, IntLiteral, Label, NodeContents, NodeReference, PropValue, QuotedString,
-};
-use crate::parse::{Dts, SpannedExt};
+use crate::parse::rules::*;
+use crate::parse::SpannedExt;
 use crate::{Node, Property};
 use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
@@ -35,8 +30,8 @@ pub fn eval(dts: Dts) -> Result<Node, SourceError> {
 fn build_temp_tree(dts: Dts) -> Result<(TempNode, LabelMap), SourceError> {
     let mut root = TempNode::default();
     let mut node_labels = LabelMap::new();
-    for _memres in dts.Memreserve() {
-        unimplemented!("memreserve");
+    for memres in dts.Memreserve() {
+        unimplemented!("{}", memres.err("unimplemented"));
     }
     for topdef in dts.TopDef() {
         if let Some(topnode) = topdef.TopNode() {
@@ -89,7 +84,7 @@ fn assign_phandles(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), So
             TempValue::Ast(ast) => {
                 // the expression here must have length 4, and may contain zero phandle references,
                 // or one, pointing to itself.
-                todo!("{}", ast.err("unimplemented".into()));
+                todo!("{}", ast.err("phandle self-reference unimplemented"));
                 // TODO: also repeat the byte checks above once it is evaluated.
                 // maybe move all this validation to a later pass.
                 // but do have to detect self-reference now to number correctly.
@@ -165,25 +160,45 @@ fn evaluate_propvalue(
     let values = propvalue.Value();
     for value in [values.0].into_iter().chain(values.1) {
         if let Some(cells) = value.Cells() {
-            if let Some(bits) = cells.Bits() {
-                todo!()
-            }
+            let bits: u32 = match cells.Bits() {
+                None => 32,
+                Some(bits) => {
+                    let n = bits.NumericLiteral().eval()?;
+                    match n {
+                        8 | 16 | 32 | 64 => n as u32,
+                        _ => return Err(bits.err("invalid bit width: must by 8, 16, 32, or 64")),
+                    }
+                }
+            };
             for cell in cells.Cell().into_iter().flatten() {
-                if let Some(phandle) = cell.NodeReference() {
-                    let path = LabelResolver(node_labels, root).resolve(phandle)?;
+                if let Some(noderef) = cell.NodeReference() {
+                    let path = LabelResolver(node_labels, root).resolve(noderef)?;
                     let node = root.walk(path.segments()).unwrap();
                     let phandle = &node.properties["phandle"];
                     let TempValue::Bytes(bytes) = phandle else {
                         panic!("unevaluated phandle");
                     };
+                    if bits != 32 {
+                        return Err(noderef.err("phandle references require /bits/ == 32"));
+                    }
+                    assert_eq!(bytes.len(), 4);
                     r.extend(bytes);
+                    continue;
                 }
-                if let Some(expr) = cell.ParenExpr() {
-                    todo!()
-                }
-                if let Some(lit) = cell.IntLiteral() {
-                    let n = parse_literal(lit)?;
-                    r.extend(n.to_be_bytes());
+                let n = if let Some(expr) = cell.ParenExpr() {
+                    expr.eval()?
+                } else if let Some(lit) = cell.IntLiteral() {
+                    lit.eval()?
+                } else {
+                    unreachable!();
+                };
+                // TODO: warn or err if value doesn't fit.  dtc accepts sign-extended values here.
+                match bits {
+                    8 => r.push(n as u8),
+                    16 => r.extend((n as u16).to_be_bytes()),
+                    32 => r.extend((n as u32).to_be_bytes()),
+                    64 => r.extend((n as u64).to_be_bytes()),
+                    _ => unreachable!(),
                 }
             }
         }
@@ -205,7 +220,7 @@ fn evaluate_propvalue(
             }
         }
         if let Some(incbin) = value.Incbin() {
-            todo!()
+            unimplemented!("{}", incbin.err("/incbin/ unimplemented"));
         }
     }
     Ok(r)
@@ -221,7 +236,7 @@ impl<'a> UnescapeExt<'a> for QuotedString<'a> {
     }
 }
 
-impl<'a> UnescapeExt<'a> for CharLiteral<'a, 0> {
+impl<'a, const INHERITED: usize> UnescapeExt<'a> for CharLiteral<'a, INHERITED> {
     fn unescape(&self) -> Result<Cow<'a, [u8]>, SourceError> {
         let r = self.SingleQuotedSpan().span.unescape()?;
         match r.len() {
@@ -244,18 +259,30 @@ impl<'a> UnescapeExt<'a> for pest_typed::Span<'a> {
     }
 }
 
-// TODO: needs a parameterized return type for /bits/?
-fn parse_literal(lit: &IntLiteral) -> Result<u32, SourceError> {
-    if let Some(c) = lit.CharLiteral() {
-        let bytes = c.unescape()?;
-        return Ok(bytes[0].into());
+/// Evaluate an expression or parse a literal.
+trait EvalExt {
+    fn eval(&self) -> Result<u64, SourceError>;
+}
+
+impl EvalExt for IntLiteral<'_> {
+    fn eval(&self) -> Result<u64, SourceError> {
+        if let Some(c) = self.CharLiteral() {
+            let bytes = c.unescape()?;
+            // This is a C 'char'; it has one byte.
+            return Ok(bytes[0].into());
+        } else if let Some(n) = self.NumericLiteral() {
+            n.eval()
+        } else {
+            unreachable!();
+        }
     }
-    let s = lit.str();
-    let s = s.trim_end_matches(['U', 'L']); // dtc is case-sensitive here
-    let n = parse_int(s).ok_or_else(|| lit.err("invalid numeric literal".into()))?;
-    // XXX dtc only requires that upper bits match; sign-extending a negative number is OK.
-    // XXX i think it does this so intermediate arithmetic can be 64-bit.  lazy.
-    u32::try_from(n).map_err(|_| lit.err("numeric literal exceeds 32 bits".into()))
+}
+
+impl<const INHERITED: usize> EvalExt for NumericLiteral<'_, INHERITED> {
+    fn eval(&self) -> Result<u64, SourceError> {
+        let s = self.str().trim_end_matches(['U', 'L']); // dtc is case-sensitive here
+        parse_int(s).ok_or_else(|| self.err("invalid numeric literal"))
+    }
 }
 
 fn parse_int(s: &str) -> Option<u64> {
@@ -269,6 +296,78 @@ fn parse_int(s: &str) -> Option<u64> {
         u64::from_str_radix(oct, 8).ok()
     } else {
         u64::from_str_radix(s, 10).ok()
+    }
+}
+
+impl EvalExt for Expr<'_> {
+    fn eval(&self) -> Result<u64, SourceError> {
+        use pest_typed::choices::Choice5::*;
+        match &*self.content {
+            _0(x) => x.eval(),
+            _1(x) => x.eval(),
+            _2(x) => x.eval(),
+            _3(x) => x.eval(),
+            _4(x) => x.eval(),
+        }
+    }
+}
+
+impl EvalExt for ParenExpr<'_> {
+    fn eval(&self) -> Result<u64, SourceError> {
+        self.Expr().eval()
+    }
+}
+
+impl EvalExt for UnaryExpr<'_> {
+    fn eval(&self) -> Result<u64, SourceError> {
+        let arg = self.Expr().eval()?;
+        use pest_typed::choices::Choice3::*;
+        match &self.UnaryOp().content {
+            _0(LogicalNot { .. }) => Ok((arg == 0).into()),
+            _1(BitwiseNot { .. }) => Ok(!arg),
+            _2(Negate { .. }) => Ok(arg.wrapping_neg()),
+        }
+    }
+}
+
+impl EvalExt for BinaryExpr<'_> {
+    fn eval(&self) -> Result<u64, SourceError> {
+        // XXX this is really unfortunate.  make the grammar less obtuse here.
+        let left = if let Some(x) = self.ParenExpr() {
+            x.eval()?
+        } else if let Some(x) = self.UnaryExpr() {
+            x.eval()?
+        } else if let Some(x) = self.IntLiteral() {
+            x.eval()?
+        } else {
+            unreachable!()
+        };
+        let right = self.Expr().eval()?;
+        // XXX sigh.
+        match self.BinaryOp().str() {
+            "+" => Some(left .wrapping_add(right)).ok_or_else(|| self.err("arithmetic overflow")),
+            // "-" => left .checked_sub(right) .ok_or_else(|| self.err("arithmetic overflow")),
+            "-" => Ok(left.wrapping_sub(right)),
+            "*" => Some(left .wrapping_mul(right)).ok_or_else(|| self.err("arithmetic overflow")),
+            "/" => left
+                .checked_div(right)
+                .ok_or_else(|| self.err("division by zero")),
+            "<<" => Some(left
+                .wrapping_shl(right.try_into().unwrap_or(u32::MAX)))
+                .ok_or_else(|| self.err("arithmetic overflow")),
+            ">>" => Some(left
+                .wrapping_shr(right.try_into().unwrap_or(u32::MAX)))
+                .ok_or_else(|| self.err("arithmetic overflow")),
+            "&" => Ok(left & right),
+            "|" => Ok(left | right),
+            _ => todo!("{}", self.BinaryOp().err("unimplemented")),
+        }
+    }
+}
+
+impl EvalExt for TernaryExpr<'_> {
+    fn eval(&self) -> Result<u64, SourceError> {
+        todo!("implement ternary operator")
     }
 }
 
@@ -440,7 +539,7 @@ struct LabelResolver<'a>(&'a LabelMap, &'a TempNode<'a>);
 impl LabelResolver<'_> {
     fn resolve(&self, noderef: &NodeReference) -> Result<NodePath, SourceError> {
         self.resolve_str(noderef.str())
-            .ok_or_else(|| noderef.err(format!("can't resolve node reference")))
+            .ok_or_else(|| noderef.err("no such node"))
     }
 
     fn resolve_str(&self, noderef: &str) -> Option<NodePath> {
