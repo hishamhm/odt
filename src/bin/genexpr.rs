@@ -112,7 +112,7 @@ const BINARY_OPS: &[&str] = &[
 ];
 
 fn count(tokens: usize) -> usize {
-    if tokens <= 0 {
+    if tokens == 0 {
         return 0;
     }
     if tokens == 1 {

@@ -8,7 +8,7 @@ use std::path::Path;
 pub struct SourceError {
     /// The wrapped error.
     /// TODO:  is this dependency OK?  what about parse_untyped?  move error?
-    pub pest_error: Error<Rule>,
+    pub pest_error: Box<Error<Rule>>,
     /// The source's address range; effectively, a '&static str which can only be compared by
     /// identity.  This is used to reconstruct the source path during error reporting.
     pub buffer: Range<*const u8>,
@@ -18,7 +18,7 @@ impl SourceError {
     pub fn new(message: String, span: pest::Span) -> Self {
         let message = ErrorVariant::CustomError { message };
         let buffer = span.get_input().as_bytes().as_ptr_range();
-        let pest_error = Error::new_from_span(message, span);
+        let pest_error = Box::new(Error::new_from_span(message, span));
         Self { pest_error, buffer }
     }
 
@@ -28,7 +28,7 @@ impl SourceError {
         let src = "";
         let buffer = src.as_bytes().as_ptr_range();
         let pos = pest::Position::from_start(src);
-        let pest_error = Error::new_from_pos(message, pos);
+        let pest_error = Box::new(Error::new_from_pos(message, pos));
         Self { pest_error, buffer }
     }
 
@@ -37,14 +37,13 @@ impl SourceError {
     }
 
     pub fn with_path(mut self, path: &Path) -> Self {
-        self.pest_error = self.pest_error.with_path(&path.to_string_lossy());
+        *self.pest_error = self.pest_error.with_path(&path.to_string_lossy());
         self
     }
 }
 
 impl From<Box<Error<Rule>>> for SourceError {
     fn from(pest_error: Box<Error<Rule>>) -> Self {
-        let pest_error = *pest_error;
         let src = "";
         let buffer = src.as_bytes().as_ptr_range();
         SourceError { pest_error, buffer }

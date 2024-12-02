@@ -84,7 +84,7 @@ fn serialize_inner(out: &mut Vec<u8>, strings: &mut StringTable, root: &Node) {
         out.align();
     }
     for node in &root.children {
-        serialize_inner(out, strings, &node);
+        serialize_inner(out, strings, node);
     }
     out.write_token(FdtToken::EndNode);
 }

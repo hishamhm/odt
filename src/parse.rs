@@ -20,7 +20,7 @@ pub use crate::parse::rules::Dts;
 use crate::parse::rules::*;
 
 pub fn parse(source: &str) -> Result<Dts, SourceError> {
-    let dtsfile = DtsParser::try_parse::<DtsFile>(&source)?;
+    let dtsfile = DtsParser::try_parse::<DtsFile>(source)?;
     Ok(dtsfile.Dts().clone())
 }
 
@@ -52,7 +52,7 @@ fn _visit_includes<'a>(
     for include in dts.Include() {
         let ipath = include.QuotedString().QuotedSpan().str();
         // The path is not unescaped in any way before use.
-        let Some((ipath, src)) = loader.find_utf8(dir, &Path::new(ipath)) else {
+        let Some((ipath, src)) = loader.find_utf8(dir, Path::new(ipath)) else {
             return Err(include.err("can't find include file on search path"));
         };
         let dts = parse(src)?;

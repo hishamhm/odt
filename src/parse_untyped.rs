@@ -15,7 +15,7 @@ pub type Tree<'a> = Pair<'a, Rule>;
 
 // TODO: report errors
 pub fn parse(source: &str) -> Tree {
-    match DtsParser::parse(Rule::DtsFile, &source) {
+    match DtsParser::parse(Rule::DtsFile, source) {
         Ok(mut dtsfile) => dtsfile.next().unwrap(),
         Err(err) => panic!(
             "parsing failed:\n{}",

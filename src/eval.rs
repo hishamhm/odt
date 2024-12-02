@@ -30,7 +30,7 @@ pub fn eval(dts: Dts) -> Result<Node, SourceError> {
 fn build_temp_tree(dts: Dts) -> Result<(TempNode, LabelMap), SourceError> {
     let mut root = TempNode::default();
     let mut node_labels = LabelMap::new();
-    for memres in dts.Memreserve() {
+    if let Some(memres) = dts.Memreserve().first() {
         unimplemented!("{}", memres.err("unimplemented"));
     }
     for topdef in dts.TopDef() {
@@ -108,7 +108,7 @@ fn visit_phandle_references(
                 if let Some(cells) = value.Cells() {
                     for cell in cells.Cell().into_iter().flatten() {
                         if let Some(phandle) = cell.NodeReference() {
-                            let target = labels.resolve(&phandle)?;
+                            let target = labels.resolve(phandle)?;
                             need_phandles.replace(target);
                         }
                     }
@@ -118,7 +118,7 @@ fn visit_phandle_references(
     }
     for (name, tempnode) in &node.children {
         let child_path = path.join(name);
-        visit_phandle_references(labels, &tempnode, &child_path, need_phandles)?;
+        visit_phandle_references(labels, tempnode, &child_path, need_phandles)?;
     }
     Ok(())
 }
@@ -293,7 +293,7 @@ impl EvalExt for IntLiteral<'_> {
         if let Some(c) = self.CharLiteral() {
             let bytes = c.unescape()?;
             // This is a C 'char'; it has one byte.
-            return Ok(bytes[0].into());
+            Ok(bytes[0].into())
         } else if let Some(n) = self.NumericLiteral() {
             n.eval()
         } else {
@@ -313,14 +313,16 @@ fn parse_int(s: &str) -> Option<u64> {
     // TODO:  It would be nice to permit underscores or other digit separators.
     //        The grammar would need update too.
     if s == "0" {
-        Some(0)
-    } else if let Some(hex) = s.strip_prefix("0x").or(s.strip_prefix("0X")) {
-        u64::from_str_radix(hex, 16).ok()
+        return Some(0);
+    };
+    let (digits, radix) = if let Some(hex) = s.strip_prefix("0x").or(s.strip_prefix("0X")) {
+        (hex, 16)
     } else if let Some(oct) = s.strip_prefix('0') {
-        u64::from_str_radix(oct, 8).ok()
+        (oct, 8)
     } else {
-        u64::from_str_radix(s, 10).ok()
-    }
+        (s, 10)
+    };
+    u64::from_str_radix(digits, radix).ok()
 }
 
 impl EvalExt for Expr<'_> {
@@ -368,8 +370,6 @@ impl EvalExt for BinaryExpr<'_> {
             unreachable!()
         };
         let right = self.Expr().eval()?;
-        let leftbool = left != 0;
-        let rightbool = right != 0;
         // XXX sigh.
         match self.BinaryOp().str() {
             "+" => left
@@ -396,14 +396,14 @@ impl EvalExt for BinaryExpr<'_> {
             "&" => Ok(left & right),
             "|" => Ok(left | right),
             "^" => Ok(left ^ right),
-            "&&" => Ok((leftbool && rightbool) as u64),
-            "||" => Ok((leftbool || rightbool) as u64),
-            "<=" => Ok((leftbool <= rightbool) as u64),
-            ">=" => Ok((leftbool >= rightbool) as u64),
-            "<" => Ok((leftbool < rightbool) as u64),
-            ">" => Ok((leftbool > rightbool) as u64),
-            "==" => Ok((leftbool == rightbool) as u64),
-            "!=" => Ok((leftbool != rightbool) as u64),
+            "&&" => Ok((left != 0 && right != 0) as u64),
+            "||" => Ok((left != 0 || right != 0) as u64),
+            "<=" => Ok((left <= right) as u64),
+            ">=" => Ok((left >= right) as u64),
+            "<" => Ok((left < right) as u64),
+            ">" => Ok((left > right) as u64),
+            "==" => Ok((left == right) as u64),
+            "!=" => Ok((left != right) as u64),
             _ => unreachable!("{}", self.BinaryOp().err("unknown binary operator")),
         }
     }
@@ -587,7 +587,7 @@ impl LabelResolver<'_> {
     }
 
     fn resolve_str(&self, noderef: &str) -> Option<NodePath> {
-        let path = noderef.trim_matches(&['&', '{', '}']);
+        let path = noderef.trim_matches(['&', '{', '}']);
         let mut segments = path.split('/');
         let first = segments.next().unwrap();
         let segments = segments.filter(|s| !s.is_empty());
@@ -618,7 +618,7 @@ fn delete_node(node_labels: &mut LabelMap, root: &mut TempNode, path: &NodePath)
         *root = TempNode::default();
         return;
     }
-    node_labels.retain(|_, p| !p.starts_with(&path));
+    node_labels.retain(|_, p| !p.starts_with(path));
     let (parent, child) = (path.parent(), path.leaf());
     let parent = root.walk_mut(parent.segments()).unwrap();
     parent.remove_child(child);

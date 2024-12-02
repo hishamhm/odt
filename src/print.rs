@@ -33,8 +33,7 @@ impl IndentingWriter {
         if !self
             .buffer
             .chars()
-            .rev()
-            .next()
+            .next_back()
             .unwrap_or('\n')
             .is_ascii_whitespace()
         {
@@ -58,7 +57,7 @@ impl Write for IndentingWriter {
             if line.is_empty() {
                 continue;
             }
-            if self.buffer.chars().rev().next().unwrap_or('\n') == '\n' {
+            if self.buffer.chars().next_back().unwrap_or('\n') == '\n' {
                 write!(self.buffer, "{:1$}", "", self.indent)?;
             }
             self.buffer.write_str(line)?;
@@ -116,11 +115,7 @@ impl PrettyPrinter {
                 _ => true,
             };
             // TODO:  Is there a better way to determine if we're in a COMMENT rule?
-            let comment = match rule {
-                Rule::BlockComment => true,
-                Rule::LineComment => true,
-                _ => false,
-            };
+            let comment = matches!(rule, Rule::BlockComment | Rule::LineComment);
             // Only a comment on the same line is allowed to linger when a line break is pending.
             // TODO:  "Same line" is implemented by WHITESPACE above.  Check more directly?
             if !comment {

@@ -77,16 +77,14 @@ impl Loader {
             Some(value) => {
                 // SAFETY:  We never erase items from the map.
                 // Hashtable resizes will only move the Vec, not its heap buffer.
-                let value = unsafe { core::mem::transmute(value.as_slice()) };
+                let value: &'a [u8] = unsafe { core::mem::transmute(value.as_slice()) };
                 Some((key, value))
             }
         }
     }
 
-    pub fn read_utf8<'a>(&'a self, path: PathBuf) -> Option<(&'a Path, &'a str)> {
-        let Some((path, bytes)) = self.read(path) else {
-            return None;
-        };
+    pub fn read_utf8(&self, path: PathBuf) -> Option<(&Path, &str)> {
+        let (path, bytes) = self.read(path)?;
         match core::str::from_utf8(bytes) {
             Ok(s) => Some((path, s)),
             Err(_) => panic!("path {path:?} did not contain valid UTF-8"),
