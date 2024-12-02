@@ -114,7 +114,13 @@ impl Loader {
     /// Produce a representation of the files accessed, in the format of a ninja depfile
     /// or the output of `cpp -MD` or `makedepend`.
     pub fn write_depfile(&self, goal: &str) -> String {
-        let mut files: Vec<_> = self.file_contents.lock().unwrap().keys().cloned().collect();
+        let mut files: Vec<_> = self
+            .file_contents
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(path, content)| content.is_some().then_some(path.clone()))
+            .collect();
         files.sort();
         let mut dirs: Vec<_> = self
             .parents_of_missing
@@ -130,6 +136,7 @@ impl Loader {
         for f in files {
             _ = write!(out, " {}", escape(&f.to_string_lossy()));
         }
+        // TODO:  Make this optional?  Unclear if we want the rigor.
         for d in dirs {
             _ = write!(out, " {}", escape(&d.to_string_lossy()));
         }
