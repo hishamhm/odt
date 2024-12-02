@@ -160,12 +160,12 @@ fn evaluate_propvalue(
     let values = propvalue.Value();
     for value in [values.0].into_iter().chain(values.1) {
         if let Some(cells) = value.Cells() {
-            let bits: u32 = match cells.Bits() {
+            let bits = match cells.Bits() {
                 None => 32,
                 Some(bits) => {
                     let n = bits.NumericLiteral().eval()?;
                     match n {
-                        8 | 16 | 32 | 64 => n as u32,
+                        8 | 16 | 32 | 64 => n,
                         _ => return Err(bits.err("invalid bit width: must by 8, 16, 32, or 64")),
                     }
                 }
@@ -186,13 +186,37 @@ fn evaluate_propvalue(
                     continue;
                 }
                 let n = if let Some(expr) = cell.ParenExpr() {
-                    expr.eval()?
+                    // XXX debugging, replace with:
+                    //
+                    // expr.eval()?
+                    //
+                    match expr.eval() {
+                        Ok(n) => n,
+                        Err(e) => {
+                            let es = expr.str();
+                            eprintln!("Evaluating arithmetic expression {es}:\n{e}");
+                            0xdeadbeef
+                        }
+                    }
                 } else if let Some(lit) = cell.IntLiteral() {
                     lit.eval()?
                 } else {
                     unreachable!();
                 };
-                // TODO: warn or err if value doesn't fit.  dtc accepts sign-extended values here.
+                if bits < 64 {
+                    // dtc warns if the lost bits are not all the same.
+                    // We might also want to warn if they are ones but the value looks positive.
+                    let sign_bits = (63 - bits) as u32;
+                    let sign_extended = ((n as i64) << sign_bits >> sign_bits) as u64;
+                    if n != sign_extended {
+                        let err = cell.err(format!("value exceeds {bits} bits"));
+                        let trunc = n & sign_extended;
+                        let tchars = 2 + bits as usize / 4;
+                        // TODO: Reporter interface for warnings.  Can't decorate span with file path
+                        // here, and these are printed even if a more severe error occurs later.
+                        eprintln!("Truncating value {n:#x} to {trunc:#0tchars$x}:\n{err}");
+                    }
+                }
                 match bits {
                     8 => r.push(n as u8),
                     16 => r.extend((n as u16).to_be_bytes()),
@@ -325,6 +349,7 @@ impl EvalExt for UnaryExpr<'_> {
         match &self.UnaryOp().content {
             _0(LogicalNot { .. }) => Ok((arg == 0).into()),
             _1(BitwiseNot { .. }) => Ok(!arg),
+            // Devicetree has only unsigned arithmetic, so negation is allowed to overflow.
             _2(Negate { .. }) => Ok(arg.wrapping_neg()),
         }
     }
@@ -343,24 +368,43 @@ impl EvalExt for BinaryExpr<'_> {
             unreachable!()
         };
         let right = self.Expr().eval()?;
+        let leftbool = left != 0;
+        let rightbool = right != 0;
         // XXX sigh.
         match self.BinaryOp().str() {
-            "+" => Some(left .wrapping_add(right)).ok_or_else(|| self.err("arithmetic overflow")),
-            // "-" => left .checked_sub(right) .ok_or_else(|| self.err("arithmetic overflow")),
-            "-" => Ok(left.wrapping_sub(right)),
-            "*" => Some(left .wrapping_mul(right)).ok_or_else(|| self.err("arithmetic overflow")),
+            "+" => left
+                .checked_add(right)
+                .ok_or_else(|| self.err("arithmetic overflow")),
+            "-" => left
+                .checked_sub(right)
+                .ok_or_else(|| self.err("arithmetic overflow")),
+            "*" => left
+                .checked_mul(right)
+                .ok_or_else(|| self.err("arithmetic overflow")),
             "/" => left
                 .checked_div(right)
                 .ok_or_else(|| self.err("division by zero")),
-            "<<" => Some(left
-                .wrapping_shl(right.try_into().unwrap_or(u32::MAX)))
+            "%" => left
+                .checked_rem(right)
+                .ok_or_else(|| self.err("division by zero")),
+            "<<" => left
+                .checked_shl(right.try_into().unwrap_or(u32::MAX))
                 .ok_or_else(|| self.err("arithmetic overflow")),
-            ">>" => Some(left
-                .wrapping_shr(right.try_into().unwrap_or(u32::MAX)))
+            ">>" => left
+                .checked_shr(right.try_into().unwrap_or(u32::MAX))
                 .ok_or_else(|| self.err("arithmetic overflow")),
             "&" => Ok(left & right),
             "|" => Ok(left | right),
-            _ => todo!("{}", self.BinaryOp().err("unimplemented")),
+            "^" => Ok(left ^ right),
+            "&&" => Ok((leftbool && rightbool) as u64),
+            "||" => Ok((leftbool || rightbool) as u64),
+            "<=" => Ok((leftbool <= rightbool) as u64),
+            ">=" => Ok((leftbool >= rightbool) as u64),
+            "<" => Ok((leftbool < rightbool) as u64),
+            ">" => Ok((leftbool > rightbool) as u64),
+            "==" => Ok((leftbool == rightbool) as u64),
+            "!=" => Ok((leftbool != rightbool) as u64),
+            _ => unreachable!("{}", self.BinaryOp().err("unknown binary operator")),
         }
     }
 }
