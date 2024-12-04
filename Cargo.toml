@@ -2,6 +2,7 @@
 name = "dtsp"
 version = "0.1.0"
 edition = "2021"
+default-run = "dtc"
 
 [dependencies]
 hashlink = "0.9.1"
@@ -9,11 +10,10 @@ pest = "2.7.14"
 pest_derive = "2.7.14"
 pest_typed = "0.16.0"
 pest_typed_derive = "0.16.0"
-clap = { version = "4.5.21", features = ["derive"], optional = true }
+clap = { version = "4.5.21", features = ["derive"] }
 
 [[bin]]
 name = "dtc"
-required-features = ["clap"]
 
 [[bin]]
 name = "dtsfmt"

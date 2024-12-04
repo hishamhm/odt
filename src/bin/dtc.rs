@@ -5,29 +5,29 @@ use std::path::PathBuf;
 #[derive(clap::Parser)]
 #[command(version)]
 struct Args {
+    /// Input file
+    #[arg(value_name = "input_path")]
+    input_path: PathBuf,
+
     /// Input format
-    #[arg(short = 'I', long, default_value = "dts")]
+    #[arg(short = 'I', long, value_name = "format", default_value = "dts")]
     in_format: String,
 
     /// Output format
-    #[arg(short = 'O', long, default_value = "dtb")]
+    #[arg(short = 'O', long, value_name = "format", default_value = "dtb")]
     out_format: String,
 
-    /// Include search path
-    #[arg(short = 'i', long)]
-    include: Vec<PathBuf>,
-
     /// Output file (stdout if omitted)
-    #[arg(short = 'o', long)]
+    #[arg(short = 'o', long, value_name = "path")]
     out: Option<PathBuf>,
 
     /// Output dependency file
-    #[arg(short = 'd', long)]
+    #[arg(short = 'd', long, value_name = "path")]
     out_dependency: Option<PathBuf>,
 
-    /// Input filename
-    #[arg()]
-    input_path: PathBuf,
+    /// Add a directory to the include search path
+    #[arg(short = 'i', long, value_name = "path")]
+    include: Vec<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
