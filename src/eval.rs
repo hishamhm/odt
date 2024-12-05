@@ -187,18 +187,7 @@ fn evaluate_propvalue(
                     continue;
                 }
                 let n = if let Some(expr) = cell.ParenExpr() {
-                    // XXX debugging, replace with:
-                    //
-                    // expr.eval()?
-                    //
-                    match expr.eval() {
-                        Ok(n) => n,
-                        Err(e) => {
-                            let es = expr.str();
-                            eprintln!("Evaluating arithmetic expression {es}:\n{e}");
-                            0xdeadbeef
-                        }
-                    }
+                    expr.eval()?
                 } else if let Some(lit) = cell.IntLiteral() {
                     lit.eval()?
                 } else {
@@ -421,30 +410,43 @@ impl EvalExt for BinaryExpr<'_> {
         } else {
             unreachable!()
         };
+        fn check(checked_or_wrapping: Result<u64, u64>) -> Option<u64> {
+            match checked_or_wrapping {
+                Ok(checked) => Some(checked),
+                Err(wrapping) => cfg!(feature = "wrapping-arithmetic").then_some(wrapping),
+            }
+        }
+        fn add(a: u64, b: u64) -> Option<u64> {
+            check(a.checked_add(b).ok_or(a.wrapping_add(b)))
+        }
+        fn sub(a: u64, b: u64) -> Option<u64> {
+            check(a.checked_sub(b).ok_or(a.wrapping_sub(b)))
+        }
+        fn mul(a: u64, b: u64) -> Option<u64> {
+            check(a.checked_mul(b).ok_or(a.wrapping_mul(b)))
+        }
+        fn shl(a: u64, b: u64) -> Option<u64> {
+            let b = b.try_into().unwrap_or(u32::MAX);
+            check(a.checked_shl(b).ok_or(a.wrapping_shl(b)))
+        }
+        fn shr(a: u64, b: u64) -> Option<u64> {
+            let b = b.try_into().unwrap_or(u32::MAX);
+            check(a.checked_shr(b).ok_or(a.wrapping_shr(b)))
+        }
         let right = self.Expr().eval()?;
         // XXX sigh.
         match self.BinaryOp().str() {
-            "+" => left
-                .checked_add(right)
-                .ok_or_else(|| self.err("arithmetic overflow")),
-            "-" => left
-                .checked_sub(right)
-                .ok_or_else(|| self.err("arithmetic overflow")),
-            "*" => left
-                .checked_mul(right)
-                .ok_or_else(|| self.err("arithmetic overflow")),
+            "+" => add(left, right).ok_or_else(|| self.err("arithmetic overflow")),
+            "-" => sub(left, right).ok_or_else(|| self.err("arithmetic overflow")),
+            "*" => mul(left, right).ok_or_else(|| self.err("arithmetic overflow")),
+            "<<" => shl(left, right).ok_or_else(|| self.err("arithmetic overflow")),
+            ">>" => shr(left, right).ok_or_else(|| self.err("arithmetic overflow")),
             "/" => left
                 .checked_div(right)
                 .ok_or_else(|| self.err("division by zero")),
             "%" => left
                 .checked_rem(right)
                 .ok_or_else(|| self.err("division by zero")),
-            "<<" => left
-                .checked_shl(right.try_into().unwrap_or(u32::MAX))
-                .ok_or_else(|| self.err("arithmetic overflow")),
-            ">>" => left
-                .checked_shr(right.try_into().unwrap_or(u32::MAX))
-                .ok_or_else(|| self.err("arithmetic overflow")),
             "&" => Ok(left & right),
             "|" => Ok(left | right),
             "^" => Ok(left ^ right),

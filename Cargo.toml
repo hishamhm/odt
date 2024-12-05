@@ -12,6 +12,9 @@ pest_typed = "0.16.0"
 pest_typed_derive = "0.16.0"
 clap = { version = "4.5.21", features = ["derive"] }
 
+[features]
+wrapping-arithmetic = []
+
 [[bin]]
 name = "dtc"
 
