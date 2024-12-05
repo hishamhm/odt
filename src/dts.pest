@@ -161,8 +161,7 @@ IntLiteral = ${ CharLiteral | NumericLiteral }
 
 // To improve error messages, escape sequences are not fully parsed here.
 // DIFF: dtc's parsing of '\\' is broken -- but only if there is a later ' in the file!
-CharLiteral = ${ "'" ~ SingleQuotedSpan ~ "'" }
-SingleQuotedSpan = @{ singlequotedchar* }
+CharLiteral = @{ "'" ~ singlequotedchar* ~ "'" }
 singlequotedchar = { !("'" | "\\") ~ ANY | "\\" ~ ANY }
 
 NumericLiteral = @{ (HexLiteral | OctalLiteral | DecimalLiteral) ~ NumericSuffix? }
@@ -171,8 +170,7 @@ OctalLiteral = @{ "0" ~ ('0'..'7')* }
 DecimalLiteral = @{ '1'..'9' ~ ('0'..'9')* }
 NumericSuffix = { "ULL" | "LL" | "UL" | "L" | "U" }
 
-QuotedString = ${ "\"" ~ QuotedSpan ~ "\"" }
-QuotedSpan = @{ doublequotedchar* }
+QuotedString = @{ "\"" ~ doublequotedchar* ~ "\"" }
 doublequotedchar = { !("\"" | "\\") ~ ANY | "\\" ~ ANY }
 
 ByteString = { OpenSquare ~ (Label | HexByte)* ~ CloseSquare }

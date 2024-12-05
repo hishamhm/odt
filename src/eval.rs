@@ -246,13 +246,13 @@ trait UnescapeExt<'a> {
 
 impl<'a> UnescapeExt<'a> for QuotedString<'a> {
     fn unescape(&self) -> Result<Cow<'a, [u8]>, SourceError> {
-        self.QuotedSpan().span.unescape()
+        self.trim_one().unescape()
     }
 }
 
 impl<'a, const INHERITED: usize> UnescapeExt<'a> for CharLiteral<'a, INHERITED> {
     fn unescape(&self) -> Result<Cow<'a, [u8]>, SourceError> {
-        let r = self.SingleQuotedSpan().span.unescape()?;
+        let r = self.trim_one().unescape()?;
         match r.len() {
             1 => Ok(r),
             n => Err(self.err(format!("char literal is {n} bytes, should be one byte"))),

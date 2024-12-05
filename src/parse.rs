@@ -39,11 +39,11 @@ pub fn parse_with_includes<'a>(loader: &'a Loader, path: &'_ Path) -> Result<Dts
     out.content.1.matched.content.clear();
     out.content.2.matched.content.clear();
     out.content.3.matched.content.clear();
-    _visit_includes(loader, path, dts, &mut out)?;
+    visit_includes(loader, path, dts, &mut out)?;
     Ok(out)
 }
 
-fn _visit_includes<'a>(
+fn visit_includes<'a>(
     loader: &'a Loader,
     path: &'_ Path,
     mut dts: Dts<'a>,
@@ -51,13 +51,13 @@ fn _visit_includes<'a>(
 ) -> Result<(), SourceError> {
     let dir = Some(path.parent().unwrap());
     for include in dts.Include() {
-        let ipath = include.QuotedString().QuotedSpan().str();
+        let pathspan = include.QuotedString().trim_one();
         // The path is not unescaped in any way before use.
-        let Some((ipath, src)) = loader.find_utf8(dir, Path::new(ipath)) else {
-            return Err(include.err("can't find include file on search path"));
+        let Some((ipath, src)) = loader.find_utf8(dir, Path::new(pathspan.as_str())) else {
+            return Err(pathspan.err("can't find include file on search path"));
         };
         let dts = parse(src)?;
-        _visit_includes(loader, ipath, dts, out)?;
+        visit_includes(loader, ipath, dts, out)?;
     }
     // accumulate fields into the output, other than Includes (tuple element 1)
     let it = dts.content.0.matched.content.drain(..);
@@ -108,15 +108,22 @@ impl SpanExt for pest_typed::Span<'_> {
 }
 
 pub trait SpannedExt<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> {
-    fn str(&self) -> &'a str;
     fn err(&self, message: impl Into<String>) -> SourceError;
+    fn str(&self) -> &'a str;
+    fn trim_one(&self) -> pest_typed::Span<'a>;
 }
 
 impl<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> SpannedExt<'a, R, T> for T {
+    fn err(&self, message: impl Into<String>) -> SourceError {
+        self.span().err(message.into())
+    }
     fn str(&self) -> &'a str {
         self.span().as_str()
     }
-    fn err(&self, message: impl Into<String>) -> SourceError {
-        self.span().err(message.into())
+    fn trim_one(&self) -> pest_typed::Span<'a> {
+        let span = self.span();
+        let n = span.as_str().len();
+        assert!(n >= 2, "{}", self.err("no end chars to trim"));
+        span.get(1..n - 1).unwrap()
     }
 }
