@@ -97,7 +97,7 @@ pub trait SpanExt {
 
 impl SpanExt for pest::Span<'_> {
     fn to_untyped_span(&self) -> pest::Span {
-        self.clone()
+        *self
     }
 }
 

@@ -273,15 +273,21 @@ impl<'a> UnescapeExt<'a> for pest_typed::Span<'a> {
             }
         }
         fn take_hex<'a>(it: &mut CharIndices<'a>) -> Result<u8, &'a str> {
-            let itc = it.clone();
-            let n = itc.take(2).take_while(|(_, c)| c.is_digit(16)).count();
+            let n = it
+                .clone()
+                .take(2)
+                .take_while(|(_, c)| c.is_ascii_hexdigit())
+                .count();
             let s = &it.as_str()[..n];
             it.take(n).last();
             u8::from_str_radix(s, 16).or(Err(s))
         }
         fn take_oct<'a>(it: &mut CharIndices<'a>) -> Result<u8, &'a str> {
-            let itc = it.clone();
-            let n = itc.take(3).take_while(|(_, c)| c.is_digit(8)).count();
+            let n = it
+                .clone()
+                .take(3)
+                .take_while(|(_, c)| c.is_digit(8))
+                .count();
             let s = &it.as_str()[..n];
             it.take(n).last();
             // `dtc` will accept and discard a ninth bit, e.g. '\501' is 'A'.
