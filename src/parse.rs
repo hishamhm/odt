@@ -2,6 +2,7 @@
 
 use crate::error::SourceError;
 use crate::fs::Loader;
+use core::ops::Range;
 use pest_typed::TypedParser;
 use pest_typed_derive::TypedParser;
 use std::path::Path;
@@ -68,6 +69,44 @@ fn _visit_includes<'a>(
     Ok(())
 }
 
+// Implements the unstable method `str::substr_range()`.
+fn substr_range(outer: &str, inner: &str) -> Option<Range<usize>> {
+    let outer = outer.as_bytes().as_ptr_range();
+    let outer = outer.start as usize..outer.end as usize;
+    let inner = inner.as_bytes().as_ptr_range();
+    let inner = inner.start as usize..inner.end as usize;
+    if outer.start <= inner.start && outer.end >= inner.end {
+        Some(inner.start - outer.start..inner.end - outer.start)
+    } else {
+        None
+    }
+}
+
+pub trait SpanExt {
+    fn err(&self, message: impl Into<String>) -> SourceError {
+        SourceError::new(message.into(), self.to_untyped_span())
+    }
+    fn err_at(&self, substr: &str, message: impl Into<String>) -> SourceError {
+        let span = self.to_untyped_span();
+        let range = substr_range(span.as_str(), substr);
+        let span = range.map(|r| span.get(r).unwrap()).unwrap_or(span);
+        SourceError::new(message.into(), span)
+    }
+    fn to_untyped_span(&self) -> pest::Span;
+}
+
+impl SpanExt for pest::Span<'_> {
+    fn to_untyped_span(&self) -> pest::Span {
+        self.clone()
+    }
+}
+
+impl SpanExt for pest_typed::Span<'_> {
+    fn to_untyped_span(&self) -> pest::Span {
+        pest::Span::new(self.get_input(), self.start(), self.end()).unwrap()
+    }
+}
+
 pub trait SpannedExt<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> {
     fn str(&self) -> &'a str;
     fn err(&self, message: impl Into<String>) -> SourceError;
@@ -78,9 +117,6 @@ impl<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> SpannedExt<'a, 
         self.span().as_str()
     }
     fn err(&self, message: impl Into<String>) -> SourceError {
-        // convert pest_typed::Span to pest::Span
-        let s = self.span();
-        let span = pest::Span::new(s.get_input(), s.start(), s.end()).unwrap();
-        SourceError::new(message.into(), span)
+        self.span().err(message.into())
     }
 }

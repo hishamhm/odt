@@ -2,8 +2,9 @@
 
 use crate::error::SourceError;
 use crate::parse::rules::*;
-use crate::parse::SpannedExt;
+use crate::parse::{SpanExt, SpannedExt};
 use crate::{Node, Property};
+use core::str::CharIndices;
 use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
 use std::borrow::Cow;
@@ -166,7 +167,7 @@ fn evaluate_propvalue(
                     let n = bits.NumericLiteral().eval()?;
                     match n {
                         8 | 16 | 32 | 64 => n,
-                        _ => return Err(bits.err("invalid bit width: must by 8, 16, 32, or 64")),
+                        _ => return Err(bits.err("bad bit width: must be 8, 16, 32, or 64")),
                     }
                 }
             };
@@ -179,7 +180,7 @@ fn evaluate_propvalue(
                         panic!("unevaluated phandle");
                     };
                     if bits != 32 {
-                        return Err(noderef.err("phandle references require /bits/ == 32"));
+                        return Err(noderef.err("phandle references need /bits/ == 32"));
                     }
                     assert_eq!(bytes.len(), 4);
                     r.extend(bytes);
@@ -276,10 +277,61 @@ impl<'a> UnescapeExt<'a> for pest_typed::Span<'a> {
         if !s.contains('\\') {
             return Ok(Cow::Borrowed(s.as_bytes()));
         }
-        todo!("implement string unescaping");
-        // TODO: dtc accepts \a\b\f\n\r\t\v \000 \x00
-        // The descape crate looks pretty close, but we should report a precise error span.
-        // (Or reconsider having pest validate these.)
+        fn push_char(r: &mut Vec<u8>, c: char) {
+            match c.len_utf8() {
+                1 => r.push(c as u8),
+                _ => r.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes()),
+            }
+        }
+        fn take_hex<'a>(it: &mut CharIndices<'a>) -> Result<u8, &'a str> {
+            let itc = it.clone();
+            let n = itc.take(2).take_while(|(_, c)| c.is_digit(16)).count();
+            let s = &it.as_str()[..n];
+            it.take(n).last();
+            u8::from_str_radix(s, 16).or(Err(s))
+        }
+        fn take_oct<'a>(it: &mut CharIndices<'a>) -> Result<u8, &'a str> {
+            let itc = it.clone();
+            let n = itc.take(3).take_while(|(_, c)| c.is_digit(8)).count();
+            let s = &it.as_str()[..n];
+            it.take(n).last();
+            // `dtc` will accept and discard a ninth bit, e.g. '\501' is 'A'.
+            // We reject escapes above '\377'.
+            u8::from_str_radix(s, 8).or(Err(s))
+        }
+        let mut r = Vec::<u8>::new();
+        let mut it = s.char_indices();
+        while let Some((_, c)) = it.next() {
+            if c != '\\' {
+                push_char(&mut r, c);
+                continue;
+            }
+            let it0 = it.clone();
+            let Some((_, c)) = it.next() else {
+                // This should be unreachable due to the grammar.
+                return Err(self.err_at(it.as_str(), "unterminated escape sequence"));
+            };
+            let b: u8 = match c {
+                'a' => b'\x07',
+                'b' => b'\x08',
+                'f' => b'\x0c',
+                'n' => b'\n',
+                'r' => b'\r',
+                't' => b'\t',
+                'v' => b'\x0b',
+                'x' => take_hex(&mut it).map_err(|s| self.err_at(s, "bad hex escape sequence"))?,
+                '0'..'8' => {
+                    it = it0; // back up one character
+                    take_oct(&mut it).map_err(|s| self.err_at(s, "bad octal escape sequence"))?
+                }
+                c => {
+                    push_char(&mut r, c);
+                    continue;
+                }
+            };
+            r.push(b);
+        }
+        Ok(Cow::Owned(r))
     }
 }
 
@@ -305,7 +357,7 @@ impl EvalExt for IntLiteral<'_> {
 impl<const INHERITED: usize> EvalExt for NumericLiteral<'_, INHERITED> {
     fn eval(&self) -> Result<u64, SourceError> {
         let s = self.str().trim_end_matches(['U', 'L']); // dtc is case-sensitive here
-        parse_int(s).ok_or_else(|| self.err("invalid numeric literal"))
+        parse_int(s).ok_or_else(|| self.err("bad numeric literal"))
     }
 }
 
