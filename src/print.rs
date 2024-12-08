@@ -3,7 +3,7 @@ use core::fmt::Write;
 
 pub fn format(dts: Tree) -> String {
     let mut pretty = PrettyPrinter::new();
-    pretty.print(dts);
+    pretty.print(dts, Rule::EOI, Rule::EOI);
     pretty.out.buffer
 }
 
@@ -29,6 +29,11 @@ impl IndentingWriter {
             self.push('\n');
         }
     }
+    fn ensure_line(&mut self) {
+        if self.buffer.chars().next_back().unwrap_or('\n') != '\n' {
+            self.push('\n');
+        }
+    }
     fn ensure_space(&mut self) {
         if !self
             .buffer
@@ -40,6 +45,7 @@ impl IndentingWriter {
             self.push(' ');
         }
     }
+
     fn push(&mut self, c: char) {
         self.write_char(c).unwrap();
     }
@@ -72,6 +78,7 @@ struct PrettyPrinter {
     tabstop: isize,
     out: IndentingWriter,
     last: Rule,
+    seen_lines: usize,
 }
 
 impl PrettyPrinter {
@@ -80,73 +87,117 @@ impl PrettyPrinter {
             tabstop: 4,
             out: IndentingWriter::default(),
             last: Rule::EOI,
+            seen_lines: 0,
         }
     }
 
-    fn print(&mut self, p: Tree) {
+    fn print(&mut self, p: Tree, parent: Rule, next_sibling: Rule) {
+        let last = self.last;
         let rule = p.as_rule();
         let text = p.as_str();
-        if rule == Rule::WHITESPACE {
-            if text.contains('\n') {
-                // TODO:  Rely less on the input formatting.
-                // XXX
-                // still seem to need two pieces of information:
-                //   has the input had a line break since the last token
-                //   does our model want to insert a line break
-                // trying to fix topnode(;) -> \n \n \n
-                //       and fix a;\n//comment -> a; //comment
-                // need to write an actual test now.
-                self.out.ensure_following_lines(1);
-                self.out.ensure_lines();
-            }
-            // don't update self.last
+
+        if rule == Rule::EOI {
+            self.out.ensure_line();
             return;
         }
-        let it = p.into_inner();
-        if it.len() == 0 {
-            let last = self.last;
+
+        if rule == Rule::WHITESPACE {
+            self.seen_lines += text.chars().filter(|&c| c == '\n').count();
+            return;
+        }
+
+        // Adjust indentation.  (Adjusting as we enter and exit interior rules would be simpler,
+        // but because the grammar accepts comments anywhere, that will not correctly reindent
+        // comments.)
+        let indent = match (parent, rule) {
+            (_, Rule::OpenNode) => 1,
+            (_, Rule::CloseNode) => -1,
+            (Rule::Prop, Rule::PropName) => 1,
+            (Rule::Prop, Rule::Semicolon) => -1,
+            _ => 0,
+        };
+
+        // Unindent this token and following tokens.
+        if indent < 0 {
+            self.out.indent(indent * self.tabstop);
+        }
+
+        let children: Vec<Tree> = p.into_inner().collect();
+        if !children.is_empty() {
+            // This is an interior rule; visit each child in turn.
+            let mut it = children.iter();
+            while let Some(p) = it.next() {
+                let next_sibling = it
+                    .clone()
+                    .map(|p| p.as_rule())
+                    .find(|r| !matches!(r, Rule::WHITESPACE | Rule::COMMENT));
+                self.print(p.clone(), rule, next_sibling.unwrap_or(Rule::EOI));
+            }
+        } else {
+            // This is a leaf rule with no children; print it.  (The grammar associates all text
+            // with such rules, so this is enough to reproduce the input.)
             self.last = rule;
-            let prepend_whitespace = match (last, rule) {
+
+            // Preserve up to two newlines around comments.
+            let keep_lines = match (last, rule) {
+                (Rule::LineComment, _) => 1, // the line comment embeds one newline
+                (_, Rule::LineComment) => 2,
+                (Rule::BlockComment, _) => 2,
+                (_, Rule::BlockComment) => 2,
+                _ => 0,
+            };
+            let lines = self.seen_lines.min(keep_lines);
+            self.seen_lines = 0;
+            if lines > 0 {
+                self.out.ensure_following_lines(lines);
+                self.out.ensure_lines();
+            };
+
+            // Determine whether to insert horizontal space based on the last token printed.
+            let prepend_space = match (last, rule) {
                 (Rule::EOI, _) => false,
                 (_, Rule::Semicolon) => false,
                 (_, Rule::Comma) => false,
                 (_, Rule::CloseCells) => false,
                 (Rule::OpenCells, _) => false,
+                (_, Rule::CloseParen) => false,
+                (Rule::OpenParen, _) => false,
                 _ => true,
             };
-            // TODO:  Is there a better way to determine if we're in a COMMENT rule?
-            let comment = matches!(rule, Rule::BlockComment | Rule::LineComment);
+
             // Only a comment on the same line is allowed to linger when a line break is pending.
-            // TODO:  "Same line" is implemented by WHITESPACE above.  Check more directly?
-            if !comment {
+            if !matches!(rule, Rule::BlockComment | Rule::LineComment) {
                 self.out.ensure_lines();
             }
-            if prepend_whitespace {
+            if prepend_space {
                 self.out.ensure_space();
             }
+
+            // TODO:  Align "<" and "//" with previous output line.
+
             write!(self.out, "{text}").unwrap();
-            self.out.ensure_following_lines(match rule {
-                Rule::OpenNode | Rule::Semicolon => 1,
-                _ => 0,
-            });
-            return;
         }
-        let indent = match rule {
-            Rule::NodeContents => self.tabstop,
-            Rule::PropValue => self.tabstop,
+
+        // Indent following tokens but not this token.
+        if indent > 0 {
+            self.out.indent(indent * self.tabstop);
+        }
+
+        let lines = match (rule, next_sibling) {
+            (Rule::Version, _) => 2,
+            // TODO:  These would match even /delete-node/ etc.  We really want to match only
+            // ChildNode / TopNode; for that, we need to remember and match against all ancestors.
+            (Rule::COMMENT, Rule::ChildDef) => 1,
+            (_, Rule::ChildDef) => 2,
+            (Rule::COMMENT, Rule::TopDef) => 1,
+            (_, Rule::TopDef) => 2,
+            (Rule::TopDef, _) => 2,
+            (Rule::Include, _) => 1,
+            (Rule::OpenNode, _) => 1,
+            (Rule::Semicolon, _) => 1,
             _ => 0,
         };
-        self.out.indent(indent);
-        for p in it {
-            self.print(p);
-        }
-        self.out.indent(-indent);
-        self.out.ensure_following_lines(match rule {
-            Rule::Version => 2,
-            Rule::Include => 1,
-            Rule::TopNode => 2,
-            _ => 0,
-        });
+        self.out.ensure_following_lines(lines);
     }
 }
 
