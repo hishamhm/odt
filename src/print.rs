@@ -237,6 +237,7 @@ fn test_format() {
     .enumerate()
     {
         let ast = crate::parse_untyped::parse(&input);
+        let ast = ast.unwrap();
         let formatted = format(ast);
         // to renumber input:
         // print!("-- {index}\n{input}");

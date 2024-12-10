@@ -13,13 +13,7 @@ struct DtsParser;
 
 pub type Tree<'a> = Pair<'a, Rule>;
 
-// TODO: report errors
-pub fn parse(source: &str) -> Tree {
-    match DtsParser::parse(Rule::DtsFile, source) {
-        Ok(mut dtsfile) => dtsfile.next().unwrap(),
-        Err(err) => panic!(
-            "parsing failed:\n{}",
-            err.renamed_rules(|rule| format!("{:?}", rule))
-        ),
-    }
+pub fn parse(source: &str) -> Result<Tree, pest::error::Error<Rule>> {
+    let mut dtsfile = DtsParser::parse(Rule::DtsFile, source)?;
+    Ok(dtsfile.next().unwrap())
 }
