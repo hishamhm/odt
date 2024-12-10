@@ -46,3 +46,84 @@
 -- 17
 / { } ;
 / { } ;
+-- 18
+/dts-v1/;
+/include/"base.dtsi"
+/{empty-prop;
+prop=<(3)>,/bits/7<(-1)>,<>,"string",[aabb];
+/delete-property/prop;
+/delete-node/child;
+child{inner{};};child2{};};
+&{/}{};
+/delete-node/&{/};
+/delete-node/&{/};
+&{/}{};
+-- 19
+/include/ "base.dtsi" // line comment
+/include/ "base.dtsi" /* block comment */
+
+// line comment
+/include/ "base.dtsi"
+/* block comment */
+/include/ "base.dtsi"
+
+// line comment
+/include/ "base.dtsi"
+
+/* block comment */
+/include/ "base.dtsi"
+
+// line comment
+/include/ "base.dtsi"
+/include/ "base.dtsi"
+
+/* block comment */
+/include/ "base.dtsi"
+/include/ "base.dtsi"
+
+// line comment
+
+/include/ "base.dtsi"
+/include/ "base.dtsi"
+
+/* block comment */
+
+/include/ "base.dtsi"
+/include/ "base.dtsi"
+-- 20
+// line comment
+/ { // same line as opening brace
+    // inside
+    prop; // same line as property
+    prop2 = // same line as assignment
+        "value";
+    // end
+}; // trailing
+// following
+/ {
+};
+
+// multiple
+// comment
+// lines
+/* in */
+/* various
+ * different
+   styles */
+/ {
+};
+-- 21
+/ {
+/* indented
+ * starred
+ * comment
+ */
+p1;
+/* indented
+   spaced
+   comment */
+p2;
+/* dangling
+*/
+p3;
+};

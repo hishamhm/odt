@@ -53,22 +53,26 @@ impl IndentingWriter {
 
 impl Write for IndentingWriter {
     fn write_str(&mut self, input: &str) -> core::fmt::Result {
-        let mut first = true;
-        for line in input.split('\n') {
-            if !first {
+        for (i, line) in input.split('\n').enumerate() {
+            if i > 0 {
                 self.buffer.write_char('\n')?;
                 self.pending_newlines = self.pending_newlines.saturating_sub(1);
             }
-            first = false;
             if line.is_empty() {
                 continue;
             }
             if self.buffer.chars().next_back().unwrap_or('\n') == '\n' {
                 write!(self.buffer, "{:1$}", "", self.indent)?;
             }
-            self.buffer.write_str(line)?;
-            // We could discard any spaces we didn't produce at the start of each line.
-            // That might be simpler than `ensure_space()`, but it would reformat inside comments.
+            if i == 0 {
+                self.buffer.write_str(line)?;
+            } else {
+                // If we get multiple lines to print at once, assume they're part of a C-style
+                // comment, and reindent the interior lines.
+                let line = line.trim_start();
+                let prefix = if line.starts_with('*') { " " } else { "   " };
+                write!(self.buffer, "{prefix}{line}")?;
+            }
         }
         Ok(())
     }
@@ -97,6 +101,7 @@ impl PrettyPrinter {
         let text = p.as_str();
 
         if rule == Rule::EOI {
+            // Avoid extra blank lines at EOF.
             self.out.ensure_line();
             return;
         }
@@ -148,20 +153,21 @@ impl PrettyPrinter {
             // with such rules, so this is enough to reproduce the input.)
             self.last = rule;
 
-            // Preserve up to two newlines around comments.
-            let keep_lines = match (last, rule) {
-                (Rule::LineComment, _) => 1, // the line comment embeds one newline
-                (_, Rule::LineComment) => 2,
-                (Rule::BlockComment, _) => 2,
-                (_, Rule::BlockComment) => 2,
-                _ => 0,
-            };
-            let lines = self.seen_lines.min(keep_lines);
-            self.seen_lines = 0;
-            if lines > 0 {
+            // Only a comment on the same line is allowed to linger when a line break is pending.
+            if self.seen_lines > 0 || !matches!(rule, Rule::BlockComment | Rule::LineComment) {
+                // Preserve up to two newlines around comments.
+                let keep_lines = match (last, rule) {
+                    (Rule::LineComment, _) => 2,
+                    (_, Rule::LineComment) => 2,
+                    (Rule::BlockComment, _) => 2,
+                    (_, Rule::BlockComment) => 2,
+                    _ => 0,
+                };
+                let lines = self.seen_lines.min(keep_lines);
                 self.out.ensure_following_lines(lines);
                 self.out.ensure_lines();
-            };
+                self.seen_lines = 0;
+            }
 
             // Determine whether to insert horizontal space based on the last token printed.
             let prepend_space = match (last, rule) {
@@ -175,17 +181,11 @@ impl PrettyPrinter {
                 _ => true,
             };
 
-            // Only a comment on the same line is allowed to linger when a line break is pending.
-            if !matches!(rule, Rule::BlockComment | Rule::LineComment) {
-                self.out.ensure_lines();
-            }
             if prepend_space {
                 self.out.ensure_space();
             }
 
             // TODO:  Align "<" and "//" with previous output line.  Might require lookahead.
-
-            // TODO:  This reindents the interior lines of a block comment incorrectly.
 
             write!(self.out, "{text}").unwrap();
         }
