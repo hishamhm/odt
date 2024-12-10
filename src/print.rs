@@ -127,11 +127,21 @@ impl PrettyPrinter {
             // This is an interior rule; visit each child in turn.
             let mut it = children.iter();
             while let Some(p) = it.next() {
-                let next_sibling = it
+                // Check if the next token (other than whitespace or comments) begins
+                // a ChildNode or TopNode.
+                let mut next = it
                     .clone()
-                    .map(|p| p.as_rule())
-                    .find(|r| !matches!(r, Rule::WHITESPACE | Rule::COMMENT));
-                self.print(p.clone(), rule, next_sibling.unwrap_or(Rule::EOI));
+                    .find(|p| !matches!(p.as_rule(), Rule::WHITESPACE | Rule::COMMENT))
+                    .cloned();
+                let mut next_rule = Rule::EOI;
+                while let Some(p) = next {
+                    next_rule = p.as_rule();
+                    if matches!(next_rule, Rule::ChildNode | Rule::TopNode) {
+                        break;
+                    }
+                    next = p.into_inner().next(); // left recurse
+                }
+                self.print(p.clone(), rule, next_rule);
             }
         } else {
             // This is a leaf rule with no children; print it.  (The grammar associates all text
@@ -173,7 +183,9 @@ impl PrettyPrinter {
                 self.out.ensure_space();
             }
 
-            // TODO:  Align "<" and "//" with previous output line.
+            // TODO:  Align "<" and "//" with previous output line.  Might require lookahead.
+
+            // TODO:  This reindents the interior lines of a block comment incorrectly.
 
             write!(self.out, "{text}").unwrap();
         }
@@ -183,17 +195,16 @@ impl PrettyPrinter {
             self.out.indent(indent * self.tabstop);
         }
 
+        // Insert vertical whitespace between some pairings of adjacent rules.
         let lines = match (rule, next_sibling) {
             (Rule::Version, _) => 2,
-            // TODO:  These would match even /delete-node/ etc.  We really want to match only
-            // ChildNode / TopNode; for that, we need to remember and match against all ancestors.
-            (Rule::COMMENT, Rule::ChildDef) => 1,
-            (_, Rule::ChildDef) => 2,
-            (Rule::COMMENT, Rule::TopDef) => 1,
-            (_, Rule::TopDef) => 2,
+            (Rule::OpenNode, _) => 1,
+            (Rule::COMMENT, Rule::ChildNode) => 1,
+            (_, Rule::ChildNode) => 2,
+            (Rule::COMMENT, Rule::TopNode) => 1,
+            (_, Rule::TopNode) => 2,
             (Rule::TopDef, _) => 2,
             (Rule::Include, _) => 1,
-            (Rule::OpenNode, _) => 1,
             (Rule::Semicolon, _) => 1,
             _ => 0,
         };
