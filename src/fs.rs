@@ -62,9 +62,7 @@ impl Loader {
         let entry = file_contents.entry(path);
         // SAFETY:  We never erase items from the map.
         // The `entry.key()` PathBuf is either in the map, or will be moved into it.
-        // Hashtable resizes will only move the PathBuf, not its heap buffer.
-        // (This depends on PathBuf/OsStr/Vec not implementing SSO or the like.
-        //  We could wrap them in Rc<> to ensure they don't move.)
+        // PathBuf is "StableDeref": moving it does not move the heap buffer.
         let key: &'a Path = unsafe { core::mem::transmute(entry.key().as_path()) };
         match entry.or_insert_with(|| {
             let result = std::fs::read(key).ok();
@@ -76,7 +74,8 @@ impl Loader {
             None => None,
             Some(value) => {
                 // SAFETY:  We never erase items from the map.
-                // Hashtable resizes will only move the Vec, not its heap buffer.
+                // Hashtable resizes may move the Vec, but Vec is "StableDeref":
+                // moving it does not move the heap buffer.
                 let value: &'a [u8] = unsafe { core::mem::transmute(value.as_slice()) };
                 Some((key, value))
             }
