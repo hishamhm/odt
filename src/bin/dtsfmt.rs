@@ -17,15 +17,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     if args.input_path.is_empty() {
         let source = std::io::read_to_string(std::io::stdin())?;
-        let ast = dtsp::parse_untyped::parse(&source);
-        let output = dtsp::print::format(ast);
+        let ast = odt::parse_untyped::parse(&source);
+        let output = odt::print::format(ast);
         print!("{}", output);
         return Ok(());
     }
     for filename in args.input_path {
         let source = std::fs::read_to_string(filename.clone())?;
-        let ast = dtsp::parse_untyped::parse(&source);
-        let output = dtsp::print::format(ast);
+        let ast = odt::parse_untyped::parse(&source);
+        let output = odt::print::format(ast);
         if args.in_place {
             // TODO:  Write to a temporary file and rename over the original.
             // Reopening the file like this can lose data (e.g. if the disk is full).

@@ -35,11 +35,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(args.in_format == "dts", "only DTS input is supported");
     assert!(args.out_format == "dtb", "only binary output is supported");
     // TODO: optionally read from stdin -- won't work via loader
-    let loader = dtsp::fs::Loader::new(args.include);
+    let loader = odt::fs::Loader::new(args.include);
     let input = &args.input_path;
-    let dts = dtsp::parse::parse_with_includes(&loader, input).map_err(|e| loader.infer_path(e))?;
-    let root = dtsp::eval::eval(dts).map_err(|e| loader.infer_path(e))?;
-    let dtb = dtsp::flat::serialize(&root);
+    let dts = odt::parse::parse_with_includes(&loader, input).map_err(|e| loader.infer_path(e))?;
+    let root = odt::eval::eval(dts).map_err(|e| loader.infer_path(e))?;
+    let dtb = odt::flat::serialize(&root);
     let mut goal = String::from("-");
     let mut writer: Box<dyn Write> = if let Some(outfile) = args.out {
         goal = outfile.to_string_lossy().into_owned();
