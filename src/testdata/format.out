@@ -81,7 +81,9 @@
 
 / {
     empty-prop;
-    prop = <(3)>, /bits/ 7 <(- 1)>, <>, "string", [ aa bb ];
+    prop = <(3)>,
+        /bits/ 7 <(- 1)>,
+        <>, "string", [ aa bb ];
     /delete-property/ prop;
     /delete-node/ child;
 
@@ -172,4 +174,10 @@
     /* dangling
      */
     p3;
+};
+-- 22
+/ {
+    prop = <3>,
+        <4 5>, "six",
+        <0x07>;
 };

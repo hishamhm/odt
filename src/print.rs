@@ -133,7 +133,7 @@ impl PrettyPrinter {
             let mut it = children.iter();
             while let Some(p) = it.next() {
                 // Check if the next token (other than whitespace or comments) begins
-                // a ChildNode or TopNode.
+                // a node of interest for line break insertion.
                 let mut next = it
                     .clone()
                     .find(|p| !matches!(p.as_rule(), Rule::WHITESPACE | Rule::COMMENT))
@@ -141,7 +141,7 @@ impl PrettyPrinter {
                 let mut next_rule = Rule::EOI;
                 while let Some(p) = next {
                     next_rule = p.as_rule();
-                    if matches!(next_rule, Rule::ChildNode | Rule::TopNode) {
+                    if matches!(next_rule, Rule::TopNode | Rule::ChildNode | Rule::Cells) {
                         break;
                     }
                     next = p.into_inner().next(); // left recurse
@@ -196,20 +196,22 @@ impl PrettyPrinter {
         }
 
         // Insert vertical whitespace between some pairings of adjacent rules.
+        // NB:  RHS needs to be explicitly matched when next_sibling is computed.
         let lines = match (rule, next_sibling) {
             (Rule::Version, _) => 2,
             (Rule::OpenNode, _) => 1,
-            (Rule::COMMENT, Rule::ChildNode) => 0,
-            (Rule::BlockComment, Rule::ChildNode) => 1,
-            (Rule::LineComment, Rule::ChildNode) => 0,
-            (_, Rule::ChildNode) => 2,
             (Rule::COMMENT, Rule::TopNode) => 0,
             (Rule::BlockComment, Rule::TopNode) => 1,
             (Rule::LineComment, Rule::TopNode) => 0,
             (_, Rule::TopNode) => 2,
+            (Rule::COMMENT, Rule::ChildNode) => 0,
+            (Rule::BlockComment, Rule::ChildNode) => 1,
+            (Rule::LineComment, Rule::ChildNode) => 0,
+            (_, Rule::ChildNode) => 2,
             (Rule::TopDef, _) => 2,
             (Rule::Include, _) => 1,
             (Rule::Semicolon, _) => 1,
+            (Rule::Comma, Rule::Cells) => 1,
             _ => 0,
         };
         self.out.ensure_following_lines(lines);
