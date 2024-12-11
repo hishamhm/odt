@@ -762,23 +762,27 @@ fn add_label(
 }
 
 #[test]
-fn test_format() {
-    let source = include_str!("testdata/eval.dts");
-    let dts = crate::parse::parse(source).unwrap();
-    let tree = eval(dts).unwrap();
-    for p in tree.properties {
-        let name = &p.name;
-        let v = &p.value;
-        assert_eq!(
-            v.len(),
-            8,
-            "property {name} has wrong shape; should be <expected computed>"
-        );
-        let left = u32::from_be_bytes(v[0..4].try_into().unwrap());
-        let right = u32::from_be_bytes(v[4..8].try_into().unwrap());
-        assert_eq!(
-            left, right,
-            "property {name:?} did not evaluate to two equal values"
-        );
+fn test_eval() {
+    for source in [
+        include_str!("testdata/charlit.dts"),
+        include_str!("testdata/expr.dts"),
+    ] {
+        let dts = crate::parse::parse(source).unwrap();
+        let tree = eval(dts).unwrap();
+        for p in tree.properties {
+            let name = &p.name;
+            let v = &p.value;
+            assert_eq!(
+                v.len(),
+                8,
+                "property {name} has wrong shape; should be <expected computed>"
+            );
+            let left = u32::from_be_bytes(v[0..4].try_into().unwrap());
+            let right = u32::from_be_bytes(v[4..8].try_into().unwrap());
+            assert_eq!(
+                left, right,
+                "property {name:?} did not evaluate to two equal values"
+            );
+        }
     }
 }

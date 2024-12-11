@@ -1,0 +1,6 @@
+/dts-v1/;
+/ {
+shl_to_zero = <0 ((~0) << 64)>;
+shr_to_zero = <0 ((~0) >> 64)>;
+operator_precedence = <603 (1 + 20 * 30 + 2)>;
+};
