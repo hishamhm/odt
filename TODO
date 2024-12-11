@@ -1,7 +1,7 @@
 more validity checks after parsing, e.g. duplicate properties/nodes without tree merge, bad node/property names
-better reporting of warnings during evaluation
-better reporting of UTF-8 errors in fs
-implement ternary operator
+improve reporting of warnings during evaluation
+improve reporting of UTF-8 errors in fs
 fix operator precedence
 fix phandle-self reference
+deleting labels is quadratic; use a bimap
 generate better enum variant names for typed parse tree

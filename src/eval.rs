@@ -481,7 +481,22 @@ impl EvalExt for BinaryExpr<'_> {
 
 impl EvalExt for TernaryExpr<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        todo!("implement ternary operator")
+        // TODO: use match here
+        let left = if let Some(x) = self.ParenExpr() {
+            x.eval()?
+        } else if let Some(x) = self.UnaryExpr() {
+            x.eval()?
+        } else if let Some(x) = self.IntLiteral() {
+            x.eval()?
+        } else {
+            unreachable!()
+        };
+        // Note that subexpression evaluation is lazy, unlike dtc.
+        if left != 0 {
+            self.Expr().0.eval()
+        } else {
+            self.Expr().1.eval()
+        }
     }
 }
 

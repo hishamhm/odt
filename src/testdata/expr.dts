@@ -2,5 +2,7 @@
 / {
 shl_to_zero = <0 ((~0) << 64)>;
 shr_to_zero = <0 ((~0) >> 64)>;
+ternary_right = <5 (0 ? 3/0 : 5/1)>;
+ternary_left = <3 (1 ? 3/1 : 5/0)>;
 operator_precedence = <603 (1 + 20 * 30 + 2)>;
 };
