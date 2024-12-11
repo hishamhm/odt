@@ -431,13 +431,19 @@ impl EvalExt for BinaryExpr<'_> {
         fn mul(a: u64, b: u64) -> Option<u64> {
             check(a.checked_mul(b).ok_or(a.wrapping_mul(b)))
         }
-        fn shl(a: u64, b: u64) -> Option<u64> {
-            let b = b.try_into().unwrap_or(u32::MAX);
-            check(a.checked_shl(b).ok_or(a.wrapping_shl(b)))
+        fn shl(a: u64, b: u64) -> u64 {
+            if b < 64 {
+                a << b
+            } else {
+                0
+            }
         }
-        fn shr(a: u64, b: u64) -> Option<u64> {
-            let b = b.try_into().unwrap_or(u32::MAX);
-            check(a.checked_shr(b).ok_or(a.wrapping_shr(b)))
+        fn shr(a: u64, b: u64) -> u64 {
+            if b < 64 {
+                a >> b
+            } else {
+                0
+            }
         }
         let right = self.Expr().eval()?;
         // XXX sigh.
@@ -445,8 +451,8 @@ impl EvalExt for BinaryExpr<'_> {
             "+" => add(left, right).ok_or_else(|| self.err("arithmetic overflow")),
             "-" => sub(left, right).ok_or_else(|| self.err("arithmetic overflow")),
             "*" => mul(left, right).ok_or_else(|| self.err("arithmetic overflow")),
-            "<<" => shl(left, right).ok_or_else(|| self.err("arithmetic overflow")),
-            ">>" => shr(left, right).ok_or_else(|| self.err("arithmetic overflow")),
+            "<<" => Ok(shl(left, right)),
+            ">>" => Ok(shr(left, right)),
             "/" => left
                 .checked_div(right)
                 .ok_or_else(|| self.err("division by zero")),
@@ -745,4 +751,26 @@ fn add_label(
         }
     }
     Ok(())
+}
+
+#[test]
+fn test_format() {
+    let source = include_str!("testdata/eval.dts");
+    let dts = crate::parse::parse(source).unwrap();
+    let tree = eval(dts).unwrap();
+    for p in tree.properties {
+        let name = &p.name;
+        let v = &p.value;
+        assert_eq!(
+            v.len(),
+            8,
+            "property {name} has wrong shape; should be <expected computed>"
+        );
+        let left = u32::from_be_bytes(v[0..4].try_into().unwrap());
+        let right = u32::from_be_bytes(v[4..8].try_into().unwrap());
+        assert_eq!(
+            left, right,
+            "property {name:?} did not evaluate to two equal values"
+        );
+    }
 }
