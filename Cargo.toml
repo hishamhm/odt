@@ -7,9 +7,9 @@ default-run = "dtc"
 [dependencies]
 hashlink = "0.9.1"
 pest = "2.7.14"
-pest_derive = "2.7.14"
+pest_derive = { version = "2.7.14", features = ["grammar-extras"] }
 pest_typed = "0.16.0"
-pest_typed_derive = "0.16.0"
+pest_typed_derive = { version = "0.16.0", features = ["grammar-extras"] }
 clap = { version = "4.5.21", features = ["derive"] }
 
 [features]

@@ -4,6 +4,7 @@ use crate::error::SourceError;
 use crate::parse::rules::*;
 use crate::parse::{SpanExt, SpannedExt};
 use crate::{Node, Property};
+use core::borrow::Borrow;
 use core::str::CharIndices;
 use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
@@ -361,8 +362,6 @@ impl<const INHERITED: usize> EvalExt for NumericLiteral<'_, INHERITED> {
 }
 
 fn parse_int(s: &str) -> Option<u64> {
-    // TODO:  It would be nice to permit underscores or other digit separators.
-    //        The grammar would need update too.
     if s == "0" {
         return Some(0);
     };
@@ -376,127 +375,138 @@ fn parse_int(s: &str) -> Option<u64> {
     u64::from_str_radix(digits, radix).ok()
 }
 
-impl EvalExt for Expr<'_> {
-    fn eval(&self) -> Result<u64, SourceError> {
-        use pest_typed::choices::Choice5::*;
-        match &*self.content {
-            _0(x) => x.eval(),
-            _1(x) => x.eval(),
-            _2(x) => x.eval(),
-            _3(x) => x.eval(),
-            _4(x) => x.eval(),
-        }
-    }
-}
-
 impl EvalExt for ParenExpr<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
         self.Expr().eval()
     }
 }
 
+impl EvalExt for Expr<'_> {
+    fn eval(&self) -> Result<u64, SourceError> {
+        self.content.eval()
+    }
+}
+
 impl EvalExt for UnaryExpr<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        let arg = self.Expr().eval()?;
-        use pest_typed::choices::Choice3::*;
-        match &self.UnaryOp().content {
-            _0(LogicalNot { .. }) => Ok((arg == 0).into()),
-            _1(BitwiseNot { .. }) => Ok(!arg),
+        let arg = self.UnaryPrec().eval()?;
+        use pest_typed::choices::Choice3;
+        match self.UnaryOp().content.borrow() {
+            Choice3::_0(LogicalNot { .. }) => Ok((arg == 0).into()),
+            Choice3::_1(BitwiseNot { .. }) => Ok(!arg),
             // Devicetree has only unsigned arithmetic, so negation is allowed to overflow.
-            _2(Negate { .. }) => Ok(arg.wrapping_neg()),
+            Choice3::_2(Negate { .. }) => Ok(arg.wrapping_neg()),
         }
     }
 }
 
-impl EvalExt for BinaryExpr<'_> {
+impl EvalExt for TernaryPrec<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        // TODO: use match here
-        let left = if let Some(x) = self.ParenExpr() {
-            x.eval()?
-        } else if let Some(x) = self.UnaryExpr() {
-            x.eval()?
-        } else if let Some(x) = self.IntLiteral() {
-            x.eval()?
-        } else {
-            unreachable!()
-        };
-        fn check(checked_or_wrapping: Result<u64, u64>) -> Option<u64> {
-            match checked_or_wrapping {
-                Ok(checked) => Some(checked),
-                Err(wrapping) => cfg!(feature = "wrapping-arithmetic").then_some(wrapping),
-            }
-        }
-        fn add(a: u64, b: u64) -> Option<u64> {
-            check(a.checked_add(b).ok_or(a.wrapping_add(b)))
-        }
-        fn sub(a: u64, b: u64) -> Option<u64> {
-            check(a.checked_sub(b).ok_or(a.wrapping_sub(b)))
-        }
-        fn mul(a: u64, b: u64) -> Option<u64> {
-            check(a.checked_mul(b).ok_or(a.wrapping_mul(b)))
-        }
-        fn shl(a: u64, b: u64) -> u64 {
-            if b < 64 {
-                a << b
-            } else {
-                0
-            }
-        }
-        fn shr(a: u64, b: u64) -> u64 {
-            if b < 64 {
-                a >> b
-            } else {
-                0
-            }
-        }
-        let right = self.Expr().eval()?;
-        // TODO: symbolic match here would be nice
-        match self.BinaryOp().str() {
-            "+" => add(left, right).ok_or_else(|| self.err("arithmetic overflow")),
-            "-" => sub(left, right).ok_or_else(|| self.err("arithmetic overflow")),
-            "*" => mul(left, right).ok_or_else(|| self.err("arithmetic overflow")),
-            "<<" => Ok(shl(left, right)),
-            ">>" => Ok(shr(left, right)),
-            "/" => left
-                .checked_div(right)
-                .ok_or_else(|| self.err("division by zero")),
-            "%" => left
-                .checked_rem(right)
-                .ok_or_else(|| self.err("division by zero")),
-            "&" => Ok(left & right),
-            "|" => Ok(left | right),
-            "^" => Ok(left ^ right),
-            "&&" => Ok((left != 0 && right != 0) as u64),
-            "||" => Ok((left != 0 || right != 0) as u64),
-            "<=" => Ok((left <= right) as u64),
-            ">=" => Ok((left >= right) as u64),
-            "<" => Ok((left < right) as u64),
-            ">" => Ok((left > right) as u64),
-            "==" => Ok((left == right) as u64),
-            "!=" => Ok((left != right) as u64),
-            _ => unreachable!("{}", self.BinaryOp().err("unknown binary operator")),
-        }
-    }
-}
-
-impl EvalExt for TernaryExpr<'_> {
-    fn eval(&self) -> Result<u64, SourceError> {
-        // TODO: use match here
-        let left = if let Some(x) = self.ParenExpr() {
-            x.eval()?
-        } else if let Some(x) = self.UnaryExpr() {
-            x.eval()?
-        } else if let Some(x) = self.IntLiteral() {
-            x.eval()?
-        } else {
-            unreachable!()
+        let left = self.left().eval()?;
+        let (Some(mid), Some(right)) = (self.mid(), self.right()) else {
+            return Ok(left);
         };
         // Note that subexpression evaluation is lazy, unlike dtc.
         if left != 0 {
-            self.Expr().0.eval()
+            mid.eval()
         } else {
-            self.Expr().1.eval()
+            right.eval()
         }
+    }
+}
+
+macro_rules! impl_binary_eval {
+    ($rule_type:ident) => {
+        impl EvalExt for $rule_type<'_> {
+            fn eval(&self) -> Result<u64, SourceError> {
+                let mut left = self.left().eval();
+                for (op, right) in core::iter::zip(self.op(), self.right()) {
+                    let right = right.eval()?;
+                    // It would be nice to match on the type of `op` rather than its text, but to
+                    // get the compile-time safety of an exhaustive match, we'd need one match
+                    // statement per precedence rule.
+                    left = eval_binary_op(left?, op.str(), right).map_err(|msg| self.err(msg));
+                }
+                left
+            }
+        }
+    };
+}
+
+// TODO:  Should these short-circuit?
+impl_binary_eval!(LogicalOrPrec);
+impl_binary_eval!(LogicalAndPrec);
+
+impl_binary_eval!(BitwiseOrPrec);
+impl_binary_eval!(BitwiseXorPrec);
+impl_binary_eval!(BitwiseAndPrec);
+impl_binary_eval!(EqualPrec);
+impl_binary_eval!(ComparePrec);
+impl_binary_eval!(ShiftPrec);
+impl_binary_eval!(AddPrec);
+impl_binary_eval!(MulPrec);
+
+impl EvalExt for UnaryPrec<'_> {
+    fn eval(&self) -> Result<u64, SourceError> {
+        use pest_typed::choices::Choice3;
+        match self.content.borrow() {
+            Choice3::_0(x) => x.eval(),
+            Choice3::_1(x) => x.eval(),
+            Choice3::_2(x) => x.eval(),
+        }
+    }
+}
+
+fn eval_binary_op(left: u64, op: &str, right: u64) -> Result<u64, &'static str> {
+    fn check(checked_or_wrapping: Result<u64, u64>) -> Option<u64> {
+        match checked_or_wrapping {
+            Ok(checked) => Some(checked),
+            Err(wrapping) => cfg!(feature = "wrapping-arithmetic").then_some(wrapping),
+        }
+    }
+    fn add(a: u64, b: u64) -> Option<u64> {
+        check(a.checked_add(b).ok_or(a.wrapping_add(b)))
+    }
+    fn sub(a: u64, b: u64) -> Option<u64> {
+        check(a.checked_sub(b).ok_or(a.wrapping_sub(b)))
+    }
+    fn mul(a: u64, b: u64) -> Option<u64> {
+        check(a.checked_mul(b).ok_or(a.wrapping_mul(b)))
+    }
+    fn shl(a: u64, b: u64) -> u64 {
+        if b < 64 {
+            a << b
+        } else {
+            0
+        }
+    }
+    fn shr(a: u64, b: u64) -> u64 {
+        if b < 64 {
+            a >> b
+        } else {
+            0
+        }
+    }
+    match op {
+        "+" => add(left, right).ok_or("arithmetic overflow"),
+        "-" => sub(left, right).ok_or("arithmetic overflow"),
+        "*" => mul(left, right).ok_or("arithmetic overflow"),
+        "<<" => Ok(shl(left, right)),
+        ">>" => Ok(shr(left, right)),
+        "/" => left.checked_div(right).ok_or("division by zero"),
+        "%" => left.checked_rem(right).ok_or("division by zero"),
+        "&" => Ok(left & right),
+        "|" => Ok(left | right),
+        "^" => Ok(left ^ right),
+        "&&" => Ok((left != 0 && right != 0) as u64),
+        "||" => Ok((left != 0 || right != 0) as u64),
+        "<=" => Ok((left <= right) as u64),
+        ">=" => Ok((left >= right) as u64),
+        "<" => Ok((left < right) as u64),
+        ">" => Ok((left > right) as u64),
+        "==" => Ok((left == right) as u64),
+        "!=" => Ok((left != right) as u64),
+        _ => Err("unknown binary operator"),
     }
 }
 

@@ -120,17 +120,34 @@ CloseCells = { ">" }
 
 Cell = { NodeReference | ParenExpr | IntLiteral }
 
-// TODO: fix operator precedence with more intermediate nodes
-Expr = { UnaryExpr | BinaryExpr | TernaryExpr | ParenExpr | IntLiteral }
 ParenExpr = { OpenParen ~ Expr ~ CloseParen }
-UnaryExpr = { UnaryOp ~ Expr }
-BinaryExpr = { (ParenExpr | UnaryExpr | IntLiteral) ~ BinaryOp ~ Expr }
-TernaryExpr = { (ParenExpr | UnaryExpr | IntLiteral) ~ QuestionMark ~ Expr ~ Colon ~ Expr }
+Expr = { TernaryPrec }
+
+// We define one rule per level of the precedence hierarchy, and consume all
+// terms at that level with repetition.  This allows left-associative
+// evaluation without left recursion in the grammar or auxiliary "tail" rules.
+
+TernaryPrec = { #left = LogicalOrPrec ~ (QuestionMark ~ #mid = Expr ~ Colon ~ #right = Expr)? }
+LogicalOrPrec = { #left = LogicalAndPrec ~ (#op = LogicalOr ~ #right = LogicalAndPrec)* }
+LogicalAndPrec = { #left = BitwiseOrPrec ~ (#op = LogicalAnd ~ #right = BitwiseOrPrec)* }
+BitwiseOrPrec = { #left = BitwiseXorPrec ~ (#op = BitwiseOr ~ #right = BitwiseXorPrec)* }
+BitwiseXorPrec = { #left = BitwiseAndPrec ~ (#op = BitwiseXor ~ #right = BitwiseAndPrec)* }
+BitwiseAndPrec = { #left = EqualPrec ~ (#op = BitwiseAnd ~ #right = EqualPrec)* }
+EqualPrec = { #left = ComparePrec ~ (#op = EqualPrecOp ~ #right = ComparePrec)* }
+ComparePrec = { #left = ShiftPrec ~ (#op = ComparePrecOp ~ #right = ShiftPrec)* }
+ShiftPrec = { #left = AddPrec ~ (#op = ShiftPrecOp ~ #right = AddPrec)* }
+AddPrec = { #left = MulPrec ~ (#op = AddPrecOp ~ #right = MulPrec)* }
+MulPrec = { #left = UnaryPrec ~ (#op = MulPrecOp ~ #right = UnaryPrec)* }
+UnaryPrec = { UnaryExpr | ParenExpr | IntLiteral }
+UnaryExpr = { UnaryOp ~ UnaryPrec }
+
+EqualPrecOp = { Equal | NotEqual }
+ComparePrecOp = { LessThanOrEqual | GreaterThanOrEqual | LessThan | GreaterThan }
+ShiftPrecOp = { LeftShift | RightShift }
+AddPrecOp = { Add | Subtract }
+MulPrecOp = { Multiply | Divide | Modulus }
 UnaryOp = { LogicalNot | BitwiseNot | Negate }
-BinaryOp = { BinaryArithmeticOp | BinaryLogicalOp | BinaryRelationalOp }
-BinaryArithmeticOp = { Add | Subtract | Multiply | Divide | Modulus }
-BinaryLogicalOp = { LogicalAnd | LogicalOr | BitwiseAnd | BitwiseOr | BitwiseXor | LeftShift | RightShift }
-BinaryRelationalOp = { LessThanOrEqual | GreaterThanOrEqual | LessThan | GreaterThan | Equal | NotEqual }
+
 OpenParen = { "(" }
 CloseParen = { ")" }
 QuestionMark = { "?" }

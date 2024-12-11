@@ -10,6 +10,7 @@ use std::path::Path;
 #[derive(TypedParser)]
 #[grammar = "dts.pest"]
 #[emit_rule_reference]
+#[emit_tagged_node_reference]
 #[box_only_if_needed]
 struct DtsParser;
 
