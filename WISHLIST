@@ -1,0 +1,22 @@
+library features
+----
+emulate dtc's tombstoning to assign the same phandles
+pretty-printing: better whitespace heuristics
+pretty-printing: more opinionated formatting (e.g. lowercase hex, strip ULL suffixes)
+linting (e.g. unit addresses vs regs property)
+post-evaluation DTS output
+sorted output tree
+tree compare mode
+facility to query the source span of a node/property
+
+
+incompatible language features
+----
+named constants: could emulate cpp #define, or let #foo in an expression search up the tree for a property #foo
+automatic semicolon insertion after closing braces
+optional digit separators
+binary literals
+terser syntax for 64-bit cells (for the mixed case of #address-cells = <2>; #size-cells = <1>;)
+typed phandle references
+in-band schemas
+

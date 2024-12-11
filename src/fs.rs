@@ -38,8 +38,7 @@ impl Loader {
         None
     }
 
-    // XXX Ugh, this wants to return `Result<Option>` because we shouldn't keep scanning other
-    // paths if we find invalid UTF-8.
+    // TODO:  Return `Result<Option>`; we shouldn't keep scanning if we find invalid UTF-8.
     pub fn find_utf8(
         &self,
         relative_to: Option<&Path>,

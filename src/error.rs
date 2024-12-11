@@ -7,7 +7,6 @@ use std::path::Path;
 /// An error annotated with a span of source code.
 pub struct SourceError {
     /// The wrapped error.
-    /// TODO:  is this dependency OK?  what about parse_untyped?  move error?
     pub pest_error: Box<Error<Rule>>,
     /// The source's address range; effectively, a '&static str which can only be compared by
     /// identity.  This is used to reconstruct the source path during error reporting.

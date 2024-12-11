@@ -35,6 +35,7 @@ fn build_temp_tree(dts: Dts) -> Result<(TempNode, LabelMap), SourceError> {
         unimplemented!("{}", memres.err("unimplemented"));
     }
     for topdef in dts.TopDef() {
+        // TODO: use match here
         if let Some(topnode) = topdef.TopNode() {
             let path = match topnode.TopNodeName().NodeReference() {
                 Some(noderef) => LabelResolver(&node_labels, &root).resolve(noderef)?,
@@ -46,11 +47,14 @@ fn build_temp_tree(dts: Dts) -> Result<(TempNode, LabelMap), SourceError> {
             }
             let contents = topnode.NodeBody().NodeContents();
             fill_temp_node(&mut node_labels, node, &path, contents)?;
-        }
-        if let Some(topdelnode) = topdef.TopDelNode() {
+        } else if let Some(topdelnode) = topdef.TopDelNode() {
             let noderef = topdelnode.NodeReference();
             let target = LabelResolver(&node_labels, &root).resolve(noderef)?;
             delete_node(&mut node_labels, &mut root, &target);
+        } else if let Some(_) = topdef.TopOmitNode() {
+            // ignored
+        } else {
+            unreachable!();
         }
     }
     Ok((root, node_labels))
@@ -125,10 +129,10 @@ fn visit_phandle_references(
 }
 
 fn evaluate_expressions(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), SourceError> {
-    // XXX here we have an ownership problem, because we need the shape of the tree to evaluate
+    // TODO:  Ownership is a challenge here.  We need the shape of the tree to evaluate
     // label and phandle references, but we also need to mutate the propvalues.
-    // could maybe use Cell to hold the temp values?
-    // for now, just clone the tree.  will need to eagerly evaluate phandles.
+    // Could put each property's TempValue into a Cell<>?
+    // For now, just clone the tree.
     _evaluate_expressions(&root.clone(), node_labels, root)
 }
 
@@ -160,6 +164,7 @@ fn evaluate_propvalue(
     let mut r = vec![];
     let values = propvalue.Value();
     for value in [values.0].into_iter().chain(values.1) {
+        // TODO: use match here
         if let Some(cells) = value.Cells() {
             let bits = match cells.Bits() {
                 None => 32,
@@ -215,26 +220,24 @@ fn evaluate_propvalue(
                     _ => unreachable!(),
                 }
             }
-        }
-        if let Some(quotedstring) = value.QuotedString() {
+        } else if let Some(quotedstring) = value.QuotedString() {
             let bytes = quotedstring.unescape()?;
             r.extend(&*bytes);
             r.push(0);
-        }
-        if let Some(noderef) = value.NodeReference() {
+        } else if let Some(noderef) = value.NodeReference() {
             let target = LabelResolver(node_labels, root).resolve(noderef)?;
             r.extend(target.display().as_bytes());
             r.push(0);
-        }
-        if let Some(bytestring) = value.ByteString() {
+        } else if let Some(bytestring) = value.ByteString() {
             for hexbyte in bytestring.HexByte().into_iter().flatten() {
                 let s = hexbyte.str();
                 let b = u8::from_str_radix(s, 16).unwrap(); // parser has already validated
                 r.push(b);
             }
-        }
-        if let Some(incbin) = value.Incbin() {
+        } else if let Some(incbin) = value.Incbin() {
             unimplemented!("{}", incbin.err("/incbin/ unimplemented"));
+        } else {
+            unreachable!();
         }
     }
     Ok(r)
@@ -337,6 +340,7 @@ trait EvalExt {
 
 impl EvalExt for IntLiteral<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
+        // TODO: use match here
         if let Some(c) = self.CharLiteral() {
             let bytes = c.unescape()?;
             // This is a C 'char'; it has one byte.
@@ -406,7 +410,7 @@ impl EvalExt for UnaryExpr<'_> {
 
 impl EvalExt for BinaryExpr<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        // XXX this is really unfortunate.  make the grammar less obtuse here.
+        // TODO: use match here
         let left = if let Some(x) = self.ParenExpr() {
             x.eval()?
         } else if let Some(x) = self.UnaryExpr() {
@@ -446,7 +450,7 @@ impl EvalExt for BinaryExpr<'_> {
             }
         }
         let right = self.Expr().eval()?;
-        // XXX sigh.
+        // TODO: symbolic match here would be nice
         match self.BinaryOp().str() {
             "+" => add(left, right).ok_or_else(|| self.err("arithmetic overflow")),
             "-" => sub(left, right).ok_or_else(|| self.err("arithmetic overflow")),
@@ -697,6 +701,7 @@ fn fill_temp_node<'a, 'b: 'a>(
     contents: &NodeContents<'b>,
 ) -> Result<(), SourceError> {
     for def in contents.ChildDef() {
+        // TODO: use match here
         if let Some(childnode) = def.ChildNode() {
             let name = childnode.NodeName().str();
             let child_path = path.join(name);
@@ -706,15 +711,17 @@ fn fill_temp_node<'a, 'b: 'a>(
             }
             let contents = childnode.NodeBody().NodeContents();
             fill_temp_node(node_labels, child, &child_path, contents)?;
-        }
-        if let Some(delnode) = def.DelNode() {
+        } else if let Some(delnode) = def.DelNode() {
             let name = delnode.NodeName().str();
             node.remove_child(name);
             let childpath = path.join(name);
             node_labels.retain(|_, p| !p.starts_with(&childpath));
+        } else {
+            unreachable!();
         }
     }
     for def in contents.PropDef() {
+        // TODO: use match here
         if let Some(prop) = def.Prop() {
             let name = prop.PropName().str();
             let value = match prop.PropValue() {
@@ -722,10 +729,11 @@ fn fill_temp_node<'a, 'b: 'a>(
                 None => TempValue::Bytes(vec![]),
             };
             node.set_property(name, value);
-        }
-        if let Some(delprop) = def.DelProp() {
+        } else if let Some(delprop) = def.DelProp() {
             let name = delprop.PropName().str();
             node.remove_property(name);
+        } else {
+            unreachable!();
         }
     }
     Ok(())
