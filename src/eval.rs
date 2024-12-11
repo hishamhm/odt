@@ -718,7 +718,7 @@ fn fill_temp_node<'a, 'b: 'a>(
     for def in contents.ChildDef() {
         // TODO: use match here
         if let Some(childnode) = def.ChildNode() {
-            let name = childnode.NodeName().str();
+            let name = childnode.NodeName().unescape_name();
             let child_path = path.join(name);
             let child = node.add_child(name);
             for label in childnode.Label().into_iter().flatten() {
@@ -727,7 +727,7 @@ fn fill_temp_node<'a, 'b: 'a>(
             let contents = childnode.NodeBody().NodeContents();
             fill_temp_node(node_labels, child, &child_path, contents)?;
         } else if let Some(delnode) = def.DelNode() {
-            let name = delnode.NodeName().str();
+            let name = delnode.NodeName().unescape_name();
             node.remove_child(name);
             let childpath = path.join(name);
             node_labels.retain(|_, p| !p.starts_with(&childpath));
@@ -735,23 +735,49 @@ fn fill_temp_node<'a, 'b: 'a>(
             unreachable!();
         }
     }
+    let mut names_used = std::collections::HashSet::new();
     for def in contents.PropDef() {
         // TODO: use match here
         if let Some(prop) = def.Prop() {
-            let name = prop.PropName().str();
+            let name = prop.PropName().unescape_name();
+            if !names_used.insert(name) {
+                // dtc rejects this only during the first definition of a node.
+                // However, it seems sensible to reopen nodes at non-top level,
+                // but likely mistaken to redefine a property within a scope.
+                return Err(prop.PropName().err("duplicate property"));
+            }
             let value = match prop.PropValue() {
                 Some(propvalue) => TempValue::Ast(propvalue.clone()),
                 None => TempValue::Bytes(vec![]),
             };
             node.set_property(name, value);
         } else if let Some(delprop) = def.DelProp() {
-            let name = delprop.PropName().str();
+            let name = delprop.PropName().unescape_name();
+            names_used.remove(name);
             node.remove_property(name);
         } else {
             unreachable!();
         }
     }
     Ok(())
+}
+
+trait UnescapeName<'a> {
+    fn unescape_name(&self) -> &'a str;
+}
+
+impl<'a> UnescapeName<'a> for NodeName<'a> {
+    fn unescape_name(&self) -> &'a str {
+        let s = self.str();
+        s.strip_prefix('\\').unwrap_or(s)
+    }
+}
+
+impl<'a> UnescapeName<'a> for PropName<'a> {
+    fn unescape_name(&self) -> &'a str {
+        let s = self.str();
+        s.strip_prefix('\\').unwrap_or(s)
+    }
 }
 
 fn add_label(
@@ -774,6 +800,18 @@ fn add_label(
         }
     }
     Ok(())
+}
+
+#[test]
+fn test_duplicate_property() {
+    let source = include_str!("testdata/duplicate_property.dts");
+    let dts = crate::parse::parse(source).unwrap();
+    let err = eval(dts).expect_err("evaluation should fail");
+    let message = format!("{err}");
+    assert!(
+        message.contains("duplicate property") && message.contains("this time it's an error"),
+        "unexpected error:\n{message}"
+    );
 }
 
 #[test]

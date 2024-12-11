@@ -1,0 +1,16 @@
+/dts-v1/;
+
+// force dtc to use merge semantics below
+/ {};
+
+/ {
+  node {
+    prop;
+  };
+  node { // reopening the node is OK
+    prop = "foo"; // redefinining the property is OK
+    /delete-property/ prop;
+    prop = "bar"; // redefinining after an explicit delete is OK
+    prop = "baz"; // but this time it's an error
+  };
+};
