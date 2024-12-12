@@ -7,7 +7,7 @@ linting (e.g. unit addresses vs regs property)
 post-evaluation DTS output
 sorted output tree
 tree compare mode
-facility to query the source span of a node/property
+facility to query the source span of a property, or the insertion point at which a property could be added
 
 
 incompatible language features

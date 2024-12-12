@@ -2,7 +2,6 @@ check validity of node/property names after parsing
 improve reporting of warnings during evaluation
 improve reporting of UTF-8 errors in fs
 unittest warnings from integer truncation
-fix operator precedence
 fix phandle-self reference
 deleting labels is quadratic; use a bimap
-generate better enum variant names for typed parse tree
+generate better enum variant names for typed parse tree (pest3 does not appear to fix this)
