@@ -9,7 +9,7 @@ use pest_derive::Parser;
 
 #[derive(Parser)]
 #[grammar = "dts.pest"]
-struct DtsParser;
+pub struct DtsParser;
 
 pub type Tree<'a> = Pair<'a, Rule>;
 
