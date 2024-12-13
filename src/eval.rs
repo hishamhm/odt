@@ -383,7 +383,7 @@ impl EvalExt for ParenExpr<'_> {
 
 impl EvalExt for Expr<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        self.content.eval()
+        self.TernaryPrec().eval()
     }
 }
 
@@ -829,6 +829,8 @@ fn test_eval() {
     for source in [
         include_str!("testdata/charlit.dts"),
         include_str!("testdata/expr.dts"),
+        #[cfg(feature = "wrapping-arithmetic")]
+        include_str!("testdata/random_expressions.dts"),
     ] {
         let dts = crate::parse::parse(source).unwrap();
         let tree = eval(dts).unwrap();

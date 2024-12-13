@@ -14,10 +14,6 @@ use std::path::Path;
 #[box_only_if_needed]
 struct DtsParser;
 
-// TODO:  The pest_typed_derive representation of choices is not great.
-// You would expect a Rust enum, but the only enums are generic with variants named _0, _1, _2....
-// See if pest3 does better.
-
 pub use crate::parse::rules::Dts;
 use crate::parse::rules::*;
 

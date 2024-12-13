@@ -2,18 +2,19 @@
 //!
 //! Invoke with two arguments:
 //! - the maximum number of tokens per expression
-//! - the number of expressions to print (omit for all)
+//! - the number of expressions to print per token count (omit for all)
 //!
 //! Sequences with an ambiguous parse tree may be generated multiple times.  We could avoid that by
 //! emitting tokens left to right while tracking the number of unclosed parentheses and ternary
 //! operators.  But for randomized testing, it's fine if ambiguous expressions are overrepresented,
 //! since those are the very cases where operator precedence matters.
 
+use std::collections::HashSet;
 use std::fmt::Write;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let max_tokens = args
+    let tokens = args
         .next()
         .map(|s| str::parse::<usize>(&s).unwrap())
         .unwrap_or(3);
@@ -22,24 +23,36 @@ fn main() {
         .map(|s| str::parse::<usize>(&s).unwrap())
         .unwrap_or(usize::MAX);
 
+    let total = count(tokens, false);
     let mut buf = String::new();
 
-    if cfg!(test) {
-        for tokens in 1..=max_tokens {
-            let total = count(tokens);
-            let mut seen = std::collections::HashSet::new();
-            for i in 0..total {
-                buf.clear();
-                select(&mut buf, tokens, i);
-                seen.insert(buf.clone());
+    let mut cache = [[0usize; 2]; 100];
+    for i in 0..=tokens {
+        cache[i][0] = count(i, false);
+        cache[i][1] = count(i, true);
+    }
+    let precount = &|tokens: usize, mask_unary: bool| {
+        cache[tokens][mask_unary as usize]
+    };
+
+    if max_examples == 0 {
+        let mut seen = HashSet::new();
+        for i in 0..total {
+            buf.clear();
+            select(&mut buf, precount, tokens, false, i);
+            if !seen.insert(buf.clone()) {
+                println!("  duplicate: {buf}");
             }
-            let unique = seen.len();
-            println!("for {tokens} tokens, {unique} unique of {total} total expressions");
         }
+        let unique = seen.len();
+        println!("for {tokens} tokens, {unique} unique of {total} total expressions");
         return;
     }
 
-    let total: usize = (1..=max_tokens).map(count).sum();
+    // Check that counter and generator agree on the boundary.
+    assert!(select(&mut buf, precount, tokens, false, total - 1));
+    assert!(!select(&mut buf, precount, tokens, false, total));
+
     let mut sampler = SampleState {
         to_consider: total,
         to_keep: max_examples,
@@ -48,30 +61,31 @@ fn main() {
     println!("/dts-v1/;");
     println!();
     println!("/ {{");
-    for tokens in 1..=max_tokens {
-        let c = count(tokens);
-        // Check that counter and generator agree on the boundary.
-        assert!(select(&mut buf, tokens, c - 1));
-        assert!(!select(&mut buf, tokens, c));
-        print!("  expressions_with_{tokens}_tokens");
-        let mut first = true;
-        // This format is necessary for dts to process a large list quickly.
+    if max_examples > 10000 {
+        // This format is necessary for dtc to process a large list quickly.
         // If we use separate properties, or comma-separated cell lists, it becomes quadratic.
-        for i in 0..c {
+        print!("  expressions_with_{tokens}_tokens = <");
+        for i in 0..total {
             if sampler.kept() {
                 buf.clear();
-                assert!(select(&mut buf, tokens, i));
-                if first {
-                    print!(" = <");
-                    first = false;
-                }
+                assert!(select(&mut buf, precount, tokens, false, i));
                 print!("\n    {i} ({buf})");
             }
         }
-        if first {
-            println!(";");
-        } else {
-            println!("\n  >;");
+        println!("\n  >;");
+    } else {
+        // This format is easy to pass through dtc in order to construct test input.
+        let width = total.ilog10() as usize + 1;
+        let mut sampled = HashSet::<usize>::new();
+        while sampled.len() < max_examples.min(total) {
+            sampled.insert(rng() % total);
+        }
+        let mut sampled = sampled.into_iter().collect::<Vec<usize>>();
+        sampled.sort();
+        for i in sampled {
+            buf.clear();
+            assert!(select(&mut buf, precount, tokens, false, i));
+            println!("  tokens_{tokens}_expr_{i:0width$} = <({buf})>, \"({buf})\";");
         }
     }
     println!("}};");
@@ -94,6 +108,8 @@ impl SampleState {
             false
         }
     }
+
+    // TODO: skip ahead using hypergeometric distribution
 }
 
 fn rng() -> usize {
@@ -101,38 +117,36 @@ fn rng() -> usize {
     RandomState::new().build_hasher().finish() as usize
 }
 
-// TODO: pick a more interesting set of numbers here.
-// or generate randomly at the leaves rather than enumerating these.
-const LITERALS: &[&str] = &["0", "1"];
 const UNARY_OPS: &[&str] = &["!", "~", "-"];
 // TODO: add back division and modulus operators once we can filter out expressions that result in division by zero
 const BINARY_OPS: &[&str] = &[
-    "+", "-", "*", /*"/", "%",*/ "&&", "||", "&", "|", "^", "<<", ">>", "<=", ">=", "<", ">",
-    "==", "!=",
+    "+", "-", "*", /*"/", "%",*/ "&&", "||", "&", "|", "^", "<<", ">>",
+    /*"<=", ">=",*/ "<", ">", "==", "!=",
 ];
 
-fn count(tokens: usize) -> usize {
+// TODO: memoize here too
+fn count(tokens: usize, mask_unary: bool) -> usize {
     if tokens == 0 {
         return 0;
     }
     if tokens == 1 {
-        return LITERALS.len();
+        return 1;
     }
     let mut r = 0;
-    if tokens >= 2 {
-        r += UNARY_OPS.len() * count(tokens - 1);
+    if tokens >= 2 && !mask_unary {
+        r += UNARY_OPS.len() * count(tokens - 1, true);
     }
     if tokens >= 3 {
-        r += count(tokens - 2); // parenthesized expression
+        r += count(tokens - 2, false); // parenthesized expression
         for i in 1..tokens - 1 {
-            r += count(i) * BINARY_OPS.len() * count(tokens - i - 1);
+            r += count(i, false) * BINARY_OPS.len() * count(tokens - i - 1, false);
         }
     }
     if tokens >= 5 {
         for i in 1..tokens {
             for j in 1..tokens {
                 if i + j + 2 < tokens {
-                    r += count(i) * count(j) * count(tokens - i - j - 2); // ternary operator
+                    r += count(i, false) * count(j, false) * count(tokens - i - j - 2, false); // ternary operator
                 }
             }
         }
@@ -140,29 +154,29 @@ fn count(tokens: usize) -> usize {
     r
 }
 
-fn select(out: &mut dyn Write, tokens: usize, mut position: usize) -> bool {
+fn select(out: &mut dyn Write, count: &dyn Fn(usize, bool) -> usize, tokens: usize, mask_unary: bool, mut position: usize) -> bool {
     assert!(tokens > 0);
     if tokens == 1 {
-        return position.within(LITERALS.len()) && emit(out, LITERALS, &mut position);
+        return position == 0 && emit_rand(out);
     }
-    if tokens >= 2 {
-        let n = count(tokens - 1);
+    if tokens >= 2 && !mask_unary {
+        let n = count(tokens - 1, true);
         if position.within(UNARY_OPS.len() * n) {
-            return emit(out, UNARY_OPS, &mut position) && select(out, tokens - 1, position);
+            return emit(out, UNARY_OPS, &mut position) && select(out, count, tokens - 1, true, position);
         }
     }
     if tokens >= 3 {
-        let n = count(tokens - 2);
+        let n = count(tokens - 2, false);
         if position.within(n) {
-            return emit_one(out, "(") && select(out, tokens - 2, position) && emit_one(out, ")");
+            return emit_one(out, "(") && select(out, count, tokens - 2, false, position) && emit_one(out, ")");
         }
         for i in 1..tokens - 1 {
-            let left = count(i);
-            let right = count(tokens - i - 1);
+            let left = count(i, false);
+            let right = count(tokens - i - 1, false);
             if position.within(left * BINARY_OPS.len() * right) {
-                return select(out, i, position.divrem(left))
+                return select(out, count, i, false, position.divrem(left))
                     && emit(out, BINARY_OPS, &mut position)
-                    && select(out, tokens - i - 1, position);
+                    && select(out, count, tokens - i - 1, false, position);
             }
         }
     }
@@ -170,15 +184,15 @@ fn select(out: &mut dyn Write, tokens: usize, mut position: usize) -> bool {
         for i in 1..tokens {
             for j in 1..tokens {
                 if i + j + 2 < tokens {
-                    let left = count(i);
-                    let mid = count(j);
-                    let right = count(tokens - i - j - 2);
+                    let left = count(i, false);
+                    let mid = count(j, false);
+                    let right = count(tokens - i - j - 2, false);
                     if position.within(left * mid * right) {
-                        return select(out, i, position.divrem(left))
+                        return select(out, count, i, false, position.divrem(left))
                             && emit_one(out, "?")
-                            && select(out, j, position.divrem(mid))
+                            && select(out, count, j, false, position.divrem(mid))
                             && emit_one(out, ":")
-                            && select(out, tokens - i - j - 2, position);
+                            && select(out, count, tokens - i - j - 2, false, position);
                     }
                 }
             }
@@ -193,6 +207,10 @@ fn emit(out: &mut dyn Write, choices: &[&str], position: &mut usize) -> bool {
 
 fn emit_one(out: &mut dyn Write, s: &str) -> bool {
     out.write_str(s).is_ok()
+}
+
+fn emit_rand(out: &mut dyn Write) -> bool {
+    write!(out, "{}", rng() % 10).is_ok()
 }
 
 trait NumberedPermutation {
