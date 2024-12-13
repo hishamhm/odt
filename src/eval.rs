@@ -1,16 +1,15 @@
 //! Facilities for converting a parsed Devicetree Source file into a tree of nodes.
 
 use crate::error::SourceError;
-use crate::parse::rules::*;
-use crate::parse::{SpanExt, SpannedExt};
+use crate::parse::gen::*;
+use crate::parse::{SpanExt, TypedRuleExt};
 use crate::{Node, Property};
-use core::borrow::Borrow;
 use core::str::CharIndices;
 use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
 use std::borrow::Cow;
 
-pub fn eval(dts: Dts) -> Result<Node, SourceError> {
+pub fn eval(dts: &Dts) -> Result<Node, SourceError> {
     // Transform the AST into a single tree of TempNodes.  This phase handles deletions of nodes
     // and properties, property overrides, and label assignments.  Note that we may delete invalid
     // constructs without evaluating them.  For example, we accept
@@ -29,33 +28,34 @@ pub fn eval(dts: Dts) -> Result<Node, SourceError> {
     Ok(from_temp_tree(root))
 }
 
-fn build_temp_tree(dts: Dts) -> Result<(TempNode, LabelMap), SourceError> {
+fn build_temp_tree<'i>(dts: &Dts<'i>) -> Result<(TempNode<'i>, LabelMap), SourceError> {
     let mut root = TempNode::default();
     let mut node_labels = LabelMap::new();
-    if let Some(memres) = dts.Memreserve().first() {
+    if let Some(memres) = dts.memreserve.first() {
         unimplemented!("{}", memres.err("unimplemented"));
     }
-    for topdef in dts.TopDef() {
-        // TODO: use match here
-        if let Some(topnode) = topdef.TopNode() {
-            let path = match topnode.TopNodeName().NodeReference() {
-                Some(noderef) => LabelResolver(&node_labels, &root).resolve(noderef)?,
-                None => NodePath::root(),
-            };
-            let node = root.walk_mut(path.segments()).unwrap();
-            for label in topnode.Label() {
-                add_label(&mut node_labels, label, &path)?;
+    for topdef in dts.topdef {
+        match topdef {
+            TopDef::TopNode(topnode) => {
+                let path = match topnode.topnodename {
+                    TopNodeName::NodeReference(noderef) => {
+                        LabelResolver(&node_labels, &root).resolve(noderef)?
+                    }
+                    TopNodeName::RootNodeName(_) => NodePath::root(),
+                };
+                let node = root.walk_mut(path.segments()).unwrap();
+                for label in topnode.label {
+                    add_label(&mut node_labels, label, &path)?;
+                }
+                let contents = topnode.nodebody.nodecontents;
+                fill_temp_node(&mut node_labels, node, &path, contents)?;
             }
-            let contents = topnode.NodeBody().NodeContents();
-            fill_temp_node(&mut node_labels, node, &path, contents)?;
-        } else if let Some(topdelnode) = topdef.TopDelNode() {
-            let noderef = topdelnode.NodeReference();
-            let target = LabelResolver(&node_labels, &root).resolve(noderef)?;
-            delete_node(&mut node_labels, &mut root, &target);
-        } else if let Some(_) = topdef.TopOmitNode() {
-            // ignored
-        } else {
-            unreachable!();
+            TopDef::TopDelNode(topdelnode) => {
+                let noderef = topdelnode.nodereference;
+                let target = LabelResolver(&node_labels, &root).resolve(noderef)?;
+                delete_node(&mut node_labels, &mut root, &target);
+            }
+            TopDef::TopOmitNode(_) => (), // ignored
         }
     }
     Ok((root, node_labels))
@@ -109,15 +109,12 @@ fn visit_phandle_references(
 ) -> Result<(), SourceError> {
     for (_, tempvalue) in &node.properties {
         if let TempValue::Ast(propvalue) = tempvalue {
-            let values = propvalue.LabeledValue();
-            for value in [values.0].into_iter().chain(values.1) {
-                if let Some(cells) = value.Value().Cells() {
-                    for labelorcell in cells.LabelOrCell() {
-                        if let Some(cell) = labelorcell.Cell() {
-                            if let Some(phandle) = cell.NodeReference() {
-                                let target = labels.resolve(phandle)?;
-                                need_phandles.replace(target);
-                            }
+            for labeledvalue in propvalue.labeledvalue {
+                if let Value::Cells(cells) = labeledvalue.value {
+                    for labelorcell in cells.labelorcell {
+                        if let LabelOrCell::Cell(Cell::NodeReference(phandle)) = labelorcell {
+                            let target = labels.resolve(phandle)?;
+                            need_phandles.replace(target);
                         }
                     }
                 }
@@ -162,91 +159,89 @@ fn _evaluate_expressions(
 fn evaluate_propvalue(
     root: &TempNode,
     node_labels: &LabelMap,
-    propvalue: PropValue,
+    propvalue: &PropValue,
 ) -> Result<Vec<u8>, SourceError> {
     let mut r = vec![];
-    let values = propvalue.LabeledValue();
-    for value in [values.0].into_iter().chain(values.1) {
-        let value = value.Value();
-        // TODO: use match here
-        if let Some(cells) = value.Cells() {
-            let bits = match cells.Bits() {
-                None => 32,
-                Some(bits) => {
-                    let n = bits.NumericLiteral().eval()?;
-                    match n {
-                        8 | 16 | 32 | 64 => n,
-                        _ => return Err(bits.err("bad bit width: must be 8, 16, 32, or 64")),
+    for labeledvalue in propvalue.labeledvalue {
+        match labeledvalue.value {
+            Value::Cells(cells) => {
+                let bits = match cells.bits {
+                    None => 32,
+                    Some(bits) => {
+                        let n = bits.numericliteral.eval()?;
+                        match n {
+                            8 | 16 | 32 | 64 => n,
+                            _ => return Err(bits.err("bad bit width: must be 8, 16, 32, or 64")),
+                        }
                     }
-                }
-            };
-            for labelorcell in cells.LabelOrCell() {
-                let Some(cell) = labelorcell.Cell() else {
-                    continue;
                 };
-                if let Some(noderef) = cell.NodeReference() {
-                    let path = LabelResolver(node_labels, root).resolve(noderef)?;
-                    let node = root.walk(path.segments()).unwrap();
-                    let phandle = &node.properties["phandle"];
-                    let TempValue::Bytes(bytes) = phandle else {
-                        panic!("unevaluated phandle");
+                for labelorcell in cells.labelorcell {
+                    let LabelOrCell::Cell(cell) = labelorcell else {
+                        continue;
                     };
-                    if bits != 32 {
-                        return Err(noderef.err("phandle references need /bits/ == 32"));
+                    let n = match cell {
+                        Cell::NodeReference(noderef) => {
+                            let path = LabelResolver(node_labels, root).resolve(noderef)?;
+                            let node = root.walk(path.segments()).unwrap();
+                            let phandle = &node.properties["phandle"];
+                            let TempValue::Bytes(bytes) = phandle else {
+                                panic!("unevaluated phandle");
+                            };
+                            if bits != 32 {
+                                return Err(noderef.err("phandle references need /bits/ == 32"));
+                            }
+                            assert_eq!(bytes.len(), 4);
+                            r.extend(bytes);
+                            continue;
+                        }
+                        Cell::ParenExpr(expr) => expr.eval()?,
+                        Cell::IntLiteral(lit) => lit.eval()?,
+                    };
+                    if bits < 64 {
+                        // dtc warns if the lost bits are not all the same.
+                        // We might also want to warn if they are ones but the value looks positive.
+                        let sign_bits = (63 - bits) as u32;
+                        let sign_extended = ((n as i64) << sign_bits >> sign_bits) as u64;
+                        if n != sign_extended {
+                            let err = cell.err(format!("value exceeds {bits} bits"));
+                            let trunc = n & sign_extended;
+                            let tchars = 2 + bits as usize / 4;
+                            // TODO: Reporter interface for warnings.  Can't decorate span with file path
+                            // here, and these are printed even if a more severe error occurs later.
+                            eprintln!("Truncating value {n:#x} to {trunc:#0tchars$x}:\n{err}");
+                        }
                     }
-                    assert_eq!(bytes.len(), 4);
-                    r.extend(bytes);
-                    continue;
-                }
-                let n = if let Some(expr) = cell.ParenExpr() {
-                    expr.eval()?
-                } else if let Some(lit) = cell.IntLiteral() {
-                    lit.eval()?
-                } else {
-                    unreachable!();
-                };
-                if bits < 64 {
-                    // dtc warns if the lost bits are not all the same.
-                    // We might also want to warn if they are ones but the value looks positive.
-                    let sign_bits = (63 - bits) as u32;
-                    let sign_extended = ((n as i64) << sign_bits >> sign_bits) as u64;
-                    if n != sign_extended {
-                        let err = cell.err(format!("value exceeds {bits} bits"));
-                        let trunc = n & sign_extended;
-                        let tchars = 2 + bits as usize / 4;
-                        // TODO: Reporter interface for warnings.  Can't decorate span with file path
-                        // here, and these are printed even if a more severe error occurs later.
-                        eprintln!("Truncating value {n:#x} to {trunc:#0tchars$x}:\n{err}");
+                    match bits {
+                        8 => r.push(n as u8),
+                        16 => r.extend((n as u16).to_be_bytes()),
+                        32 => r.extend((n as u32).to_be_bytes()),
+                        64 => r.extend((n as u64).to_be_bytes()),
+                        _ => unreachable!(),
                     }
-                }
-                match bits {
-                    8 => r.push(n as u8),
-                    16 => r.extend((n as u16).to_be_bytes()),
-                    32 => r.extend((n as u32).to_be_bytes()),
-                    64 => r.extend((n as u64).to_be_bytes()),
-                    _ => unreachable!(),
                 }
             }
-        } else if let Some(quotedstring) = value.QuotedString() {
-            let bytes = quotedstring.unescape()?;
-            r.extend(&*bytes);
-            r.push(0);
-        } else if let Some(noderef) = value.NodeReference() {
-            let target = LabelResolver(node_labels, root).resolve(noderef)?;
-            r.extend(target.display().as_bytes());
-            r.push(0);
-        } else if let Some(bytestring) = value.ByteString() {
-            for labelorhexbyte in bytestring.LabelOrHexByte() {
-                if let Some(hexbyte) = labelorhexbyte.HexByte() {
-                    let s = hexbyte.str();
-                    let b = u8::from_str_radix(s, 16).unwrap(); // parser has already validated
-                    r.push(b);
+            Value::QuotedString(quotedstring) => {
+                let bytes = quotedstring.unescape()?;
+                r.extend(&*bytes);
+                r.push(0);
+            }
+            Value::NodeReference(noderef) => {
+                let target = LabelResolver(node_labels, root).resolve(noderef)?;
+                r.extend(target.display().as_bytes());
+                r.push(0);
+            }
+            Value::ByteString(bytestring) => {
+                for labelorhexbyte in bytestring.labelorhexbyte {
+                    if let LabelOrHexByte::HexByte(hexbyte) = labelorhexbyte {
+                        let s = hexbyte.str();
+                        let b = u8::from_str_radix(s, 16).unwrap(); // parser has already validated
+                        r.push(b);
+                    }
                 }
             }
-        } else if let Some(incbin) = value.Incbin() {
-            unimplemented!("{}", incbin.err("/incbin/ unimplemented"));
-        } else {
-            unreachable!();
+            Value::Incbin(incbin) => {
+                unimplemented!("{}", incbin.err("/incbin/ unimplemented"));
+            }
         }
     }
     Ok(r)
@@ -262,7 +257,7 @@ impl<'a> UnescapeExt<'a> for QuotedString<'a> {
     }
 }
 
-impl<'a, const INHERITED: usize> UnescapeExt<'a> for CharLiteral<'a, INHERITED> {
+impl<'a> UnescapeExt<'a> for CharLiteral<'a> {
     fn unescape(&self) -> Result<Cow<'a, [u8]>, SourceError> {
         let r = self.trim_one().unescape()?;
         match r.len() {
@@ -272,7 +267,7 @@ impl<'a, const INHERITED: usize> UnescapeExt<'a> for CharLiteral<'a, INHERITED> 
     }
 }
 
-impl<'a> UnescapeExt<'a> for pest_typed::Span<'a> {
+impl<'a> UnescapeExt<'a> for pest::Span<'a> {
     fn unescape(&self) -> Result<Cow<'a, [u8]>, SourceError> {
         let s = self.as_str();
         if !s.contains('\\') {
@@ -349,20 +344,18 @@ trait EvalExt {
 
 impl EvalExt for IntLiteral<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        // TODO: use match here
-        if let Some(c) = self.CharLiteral() {
-            let bytes = c.unescape()?;
-            // This is a C 'char'; it has one byte.
-            Ok(bytes[0].into())
-        } else if let Some(n) = self.NumericLiteral() {
-            n.eval()
-        } else {
-            unreachable!();
+        match self {
+            IntLiteral::CharLiteral(c) => {
+                let bytes = c.unescape()?;
+                // This is a C 'char'; it has one byte.
+                Ok(bytes[0].into())
+            }
+            IntLiteral::NumericLiteral(n) => n.eval(),
         }
     }
 }
 
-impl<const INHERITED: usize> EvalExt for NumericLiteral<'_, INHERITED> {
+impl EvalExt for NumericLiteral<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
         let s = self.str().trim_end_matches(['U', 'L']); // dtc is case-sensitive here
         parse_int(s).ok_or_else(|| self.err("bad numeric literal"))
@@ -385,33 +378,32 @@ fn parse_int(s: &str) -> Option<u64> {
 
 impl EvalExt for ParenExpr<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        self.Expr().eval()
+        self.expr.eval()
     }
 }
 
 impl EvalExt for Expr<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        self.TernaryPrec().eval()
+        self.ternaryprec.eval()
     }
 }
 
 impl EvalExt for UnaryExpr<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        let arg = self.UnaryPrec().eval()?;
-        use pest_typed::choices::Choice3;
-        match self.UnaryOp().content.borrow() {
-            Choice3::_0(LogicalNot { .. }) => Ok((arg == 0).into()),
-            Choice3::_1(BitwiseNot { .. }) => Ok(!arg),
+        let arg = self.unaryprec.eval()?;
+        match self.unaryop {
+            UnaryOp::LogicalNot(_) => Ok((arg == 0).into()),
+            UnaryOp::BitwiseNot(_) => Ok(!arg),
             // Devicetree has only unsigned arithmetic, so negation is allowed to overflow.
-            Choice3::_2(Negate { .. }) => Ok(arg.wrapping_neg()),
+            UnaryOp::Negate(_) => Ok(arg.wrapping_neg()),
         }
     }
 }
 
 impl EvalExt for TernaryPrec<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        let left = self.left().eval()?;
-        let (Some(mid), Some(right)) = (self.mid(), self.right()) else {
+        let left = self.logicalorprec.eval()?;
+        let [mid, right] = self.expr.as_slice() else {
             return Ok(left);
         };
         // Note that subexpression evaluation is lazy, unlike dtc.
@@ -424,15 +416,16 @@ impl EvalExt for TernaryPrec<'_> {
 }
 
 macro_rules! impl_binary_eval {
-    ($rule_type:ident) => {
-        impl EvalExt for $rule_type<'_> {
+    ($rule:ident, $op:ident, $arg:ident) => {
+        impl EvalExt for $rule<'_> {
             fn eval(&self) -> Result<u64, SourceError> {
-                let mut left = self.left().eval();
-                for (op, right) in core::iter::zip(self.op(), self.right()) {
+                let mut left = self.$arg[0].eval();
+                for (op, right) in core::iter::zip(self.$op, &self.$arg[1..]) {
                     let right = right.eval()?;
                     // It would be nice to match on the type of `op` rather than its text, but to
                     // get the compile-time safety of an exhaustive match, we'd need one match
                     // statement per precedence rule.
+                    // TODO: could use UNTYPED_RULE?
                     left = eval_binary_op(left?, op.str(), right).map_err(|msg| self.err(msg));
                 }
                 left
@@ -442,25 +435,24 @@ macro_rules! impl_binary_eval {
 }
 
 // TODO:  Should these short-circuit?
-impl_binary_eval!(LogicalOrPrec);
-impl_binary_eval!(LogicalAndPrec);
+impl_binary_eval!(LogicalOrPrec, logicalor, logicalandprec);
+impl_binary_eval!(LogicalAndPrec, logicaland, bitwiseorprec);
 
-impl_binary_eval!(BitwiseOrPrec);
-impl_binary_eval!(BitwiseXorPrec);
-impl_binary_eval!(BitwiseAndPrec);
-impl_binary_eval!(EqualPrec);
-impl_binary_eval!(ComparePrec);
-impl_binary_eval!(ShiftPrec);
-impl_binary_eval!(AddPrec);
-impl_binary_eval!(MulPrec);
+impl_binary_eval!(BitwiseOrPrec, bitwiseor, bitwisexorprec);
+impl_binary_eval!(BitwiseXorPrec, bitwisexor, bitwiseandprec);
+impl_binary_eval!(BitwiseAndPrec, bitwiseand, equalprec);
+impl_binary_eval!(EqualPrec, equalprecop, compareprec);
+impl_binary_eval!(ComparePrec, compareprecop, shiftprec);
+impl_binary_eval!(ShiftPrec, shiftprecop, addprec);
+impl_binary_eval!(AddPrec, addprecop, mulprec);
+impl_binary_eval!(MulPrec, mulprecop, unaryprec);
 
 impl EvalExt for UnaryPrec<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        use pest_typed::choices::Choice3;
-        match self.content.borrow() {
-            Choice3::_0(x) => x.eval(),
-            Choice3::_1(x) => x.eval(),
-            Choice3::_2(x) => x.eval(),
+        match self {
+            UnaryPrec::UnaryExpr(x) => x.eval(),
+            UnaryPrec::ParenExpr(x) => x.eval(),
+            UnaryPrec::IntLiteral(x) => x.eval(),
         }
     }
 }
@@ -608,7 +600,7 @@ type LabelMap = LinkedHashMap<String, NodePath>;
 
 #[derive(Clone)]
 enum TempValue<'a> {
-    Ast(PropValue<'a>),
+    Ast(&'a PropValue<'a>),
     Bytes(Vec<u8>),
 }
 
@@ -733,50 +725,50 @@ fn fill_temp_node<'a, 'b: 'a>(
     path: &NodePath,
     contents: &NodeContents<'b>,
 ) -> Result<(), SourceError> {
-    for def in contents.ChildDef() {
-        // TODO: use match here
-        if let Some(childnode) = def.ChildNode() {
-            let name = childnode.NodeName().unescape_name();
-            let child_path = path.join(name);
-            let child = node.add_child(name);
-            for prefix in childnode.ChildNodePrefix() {
-                if let Some(label) = prefix.Label() {
-                    add_label(node_labels, label, &child_path)?;
+    for childdef in contents.childdef {
+        match childdef {
+            ChildDef::ChildNode(childnode) => {
+                let name = childnode.nodename.unescape_name();
+                let child_path = path.join(name);
+                let child = node.add_child(name);
+                for childnodeprefix in childnode.childnodeprefix {
+                    if let ChildNodePrefix::Label(label) = childnodeprefix {
+                        add_label(node_labels, label, &child_path)?;
+                    }
                 }
+                let contents = childnode.nodebody.nodecontents;
+                fill_temp_node(node_labels, child, &child_path, contents)?;
             }
-            let contents = childnode.NodeBody().NodeContents();
-            fill_temp_node(node_labels, child, &child_path, contents)?;
-        } else if let Some(delnode) = def.DelNode() {
-            let name = delnode.NodeName().unescape_name();
-            node.remove_child(name);
-            let childpath = path.join(name);
-            node_labels.retain(|_, p| !p.starts_with(&childpath));
-        } else {
-            unreachable!();
+            ChildDef::DelNode(delnode) => {
+                let name = delnode.nodename.unescape_name();
+                node.remove_child(name);
+                let childpath = path.join(name);
+                node_labels.retain(|_, p| !p.starts_with(&childpath));
+            }
         }
     }
     let mut names_used = std::collections::HashSet::new();
-    for def in contents.PropDef() {
-        // TODO: use match here
-        if let Some(prop) = def.Prop() {
-            let name = prop.PropName().unescape_name();
-            if !names_used.insert(name) {
-                // dtc rejects this only during the first definition of a node.
-                // However, it seems sensible to reopen nodes at non-top level,
-                // but likely mistaken to redefine a property within a scope.
-                return Err(prop.PropName().err("duplicate property"));
+    for propdef in contents.propdef {
+        match propdef {
+            PropDef::Prop(prop) => {
+                let name = prop.propname.unescape_name();
+                if !names_used.insert(name) {
+                    // dtc rejects this only during the first definition of a node.
+                    // However, it seems sensible to reopen nodes at non-top level,
+                    // but likely mistaken to redefine a property within a scope.
+                    return Err(prop.propname.err("duplicate property"));
+                }
+                let value = match prop.propvalue {
+                    Some(propvalue) => TempValue::Ast(propvalue),
+                    None => TempValue::Bytes(vec![]),
+                };
+                node.set_property(name, value);
             }
-            let value = match prop.PropValue() {
-                Some(propvalue) => TempValue::Ast(propvalue.clone()),
-                None => TempValue::Bytes(vec![]),
-            };
-            node.set_property(name, value);
-        } else if let Some(delprop) = def.DelProp() {
-            let name = delprop.PropName().unescape_name();
-            names_used.remove(name);
-            node.remove_property(name);
-        } else {
-            unreachable!();
+            PropDef::DelProp(delprop) => {
+                let name = delprop.propname.unescape_name();
+                names_used.remove(name);
+                node.remove_property(name);
+            }
         }
     }
     Ok(())
@@ -825,7 +817,8 @@ fn add_label(
 #[test]
 fn test_duplicate_property() {
     let source = include_str!("testdata/duplicate_property.dts");
-    let dts = crate::parse::parse(source).unwrap();
+    let arena = bumpalo::Bump::new();
+    let dts = crate::parse::parse_typed(source, &arena).unwrap();
     let err = eval(dts).expect_err("evaluation should fail");
     let message = format!("{err}");
     assert!(
@@ -842,7 +835,8 @@ fn test_eval() {
         #[cfg(feature = "wrapping-arithmetic")]
         include_str!("testdata/random_expressions.dts"),
     ] {
-        let dts = crate::parse::parse(source).unwrap();
+        let arena = bumpalo::Bump::new();
+        let dts = crate::parse::parse_typed(source, &arena).unwrap();
         let tree = eval(dts).unwrap();
         for p in tree.properties {
             let name = &p.name;

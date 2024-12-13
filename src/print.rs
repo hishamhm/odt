@@ -1,4 +1,4 @@
-use crate::parse_untyped::{Rule, Tree};
+use crate::parse::{Rule, Tree};
 use core::fmt::Write;
 
 pub fn format(dts: Tree) -> String {
@@ -236,9 +236,9 @@ fn test_format() {
     )
     .enumerate()
     {
-        let ast = crate::parse_untyped::parse(&input);
-        let ast = ast.unwrap();
-        let formatted = format(ast);
+        let tree = crate::parse::parse_untyped(&input);
+        let tree = tree.unwrap();
+        let formatted = format(tree);
         // to renumber input:
         // print!("-- {index}\n{input}");
         // to regenerate expected output:

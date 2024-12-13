@@ -5,7 +5,6 @@ pub mod eval;
 pub mod flat;
 pub mod fs;
 pub mod parse;
-pub mod parse_untyped;
 pub mod print;
 
 #[derive(Debug, Default)]

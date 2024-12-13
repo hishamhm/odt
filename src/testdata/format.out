@@ -181,3 +181,11 @@
         <4 5>, "six",
         <0x07>;
 };
+-- 23
+/* this comment cannot be consumed by Dts since it precedes Header */
+/dts-v1/;
+
+/ {
+};
+
+/* trailing comment */

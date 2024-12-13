@@ -4,24 +4,35 @@ pub mod gen;
 
 use crate::error::SourceError;
 use crate::fs::Loader;
+use bumpalo::collections::Vec;
+use bumpalo::Bump;
 use core::ops::Range;
-use pest_typed::TypedParser;
-use pest_typed_derive::TypedParser;
+use gen::{Dts, DtsFile, TypedRule};
+use pest::iterators::Pair;
+use pest::{Parser, Span};
+use pest_derive::Parser;
 use std::path::Path;
 
-#[derive(TypedParser)]
+#[derive(Parser)]
 #[grammar = "dts.pest"]
-#[emit_rule_reference]
-#[emit_tagged_node_reference]
-#[box_only_if_needed]
 pub struct DtsParser;
 
-pub use crate::parse::rules::Dts;
-use crate::parse::rules::*;
+/// This is pest's untyped grammar, which is convenient for clients that
+/// wish to visit every character of the input.
+pub type Tree<'a> = Pair<'a, Rule>;
 
-pub fn parse(source: &str) -> Result<Dts, SourceError> {
-    let dtsfile = DtsParser::try_parse::<DtsFile>(source)?;
-    Ok(dtsfile.Dts().clone())
+pub fn parse_untyped(source: &str) -> Result<Tree, SourceError> {
+    let mut it = DtsParser::parse(Rule::DtsFile, source)?;
+    let dtsfile = it.next().unwrap();
+    assert_eq!(dtsfile.as_rule(), Rule::DtsFile);
+    assert_eq!(it.next(), None);
+    Ok(dtsfile)
+}
+
+pub fn parse_typed<'i>(source: &'i str, arena: &'i Bump) -> Result<&'i Dts<'i>, SourceError> {
+    let tree = parse_untyped(source)?;
+    let dtsfile = DtsFile::build(tree, arena);
+    Ok(dtsfile.dts)
 }
 
 pub fn parse_with_includes<'a>(loader: &'a Loader, path: &'_ Path) -> Result<Dts<'a>, SourceError> {
@@ -31,40 +42,37 @@ pub fn parse_with_includes<'a>(loader: &'a Loader, path: &'_ Path) -> Result<Dts
             "can't load file {path:?}"
         )));
     };
-    let dts = parse(src).map_err(|e| e.with_path(path))?;
+    let dts = parse_typed(src, &loader.arena).map_err(|e| e.with_path(path))?;
     // make an empty container to receive the merged tree
-    let mut out = dts.clone();
-    out.content.0.matched.content.clear();
-    out.content.1.matched.content.clear();
-    out.content.2.matched.content.clear();
-    out.content.3.matched.content.clear();
-    visit_includes(loader, path, dts, &mut out)?;
+    let mut topdef = dts.topdef.clone();
+    visit_includes(loader, path, dts, &mut topdef)?;
+    let out = Dts {
+        topdef: loader.arena.alloc(topdef),
+        ..*dts
+    };
     Ok(out)
 }
 
 fn visit_includes<'a>(
     loader: &'a Loader,
     path: &'_ Path,
-    mut dts: Dts<'a>,
-    out: &'_ mut Dts<'a>,
+    dts: &'_ Dts<'a>,
+    out: &'_ mut Vec<&'a gen::TopDef<'a>>,
 ) -> Result<(), SourceError> {
     let dir = Some(path.parent().unwrap());
-    for include in dts.Include() {
-        let pathspan = include.QuotedString().trim_one();
+    for include in dts.include {
+        let pathspan = include.quotedstring.trim_one();
         // The path is not unescaped in any way before use.
         let Some((ipath, src)) = loader.find_utf8(dir, Path::new(pathspan.as_str())) else {
             return Err(pathspan.err("can't find include file on search path"));
         };
-        let dts = parse(src)?;
+        let dts = parse_typed(src, &loader.arena)?;
         visit_includes(loader, ipath, dts, out)?;
     }
-    // accumulate fields into the output, other than Includes (tuple element 1)
-    let it = dts.content.0.matched.content.drain(..);
-    out.content.0.matched.content.extend(it);
-    let it = dts.content.2.matched.content.drain(..);
-    out.content.2.matched.content.extend(it);
-    let it = dts.content.3.matched.content.drain(..);
-    out.content.3.matched.content.extend(it);
+    if let Some(memres) = dts.memreserve.first() {
+        unimplemented!("{}", memres.err("unimplemented"));
+    }
+    out.extend(dts.topdef);
     Ok(())
 }
 
@@ -83,43 +91,37 @@ fn substr_range(outer: &str, inner: &str) -> Option<Range<usize>> {
 
 pub trait SpanExt {
     fn err(&self, message: impl Into<String>) -> SourceError {
-        SourceError::new(message.into(), self.to_untyped_span())
+        SourceError::new(message.into(), self.span())
     }
     fn err_at(&self, substr: &str, message: impl Into<String>) -> SourceError {
-        let span = self.to_untyped_span();
+        let span = self.span();
         let range = substr_range(span.as_str(), substr);
         let span = range.map(|r| span.get(r).unwrap()).unwrap_or(span);
         SourceError::new(message.into(), span)
     }
-    fn to_untyped_span(&self) -> pest::Span;
+    fn span(&self) -> Span;
 }
 
-impl SpanExt for pest::Span<'_> {
-    fn to_untyped_span(&self) -> pest::Span {
+impl SpanExt for Span<'_> {
+    fn span(&self) -> Span {
         *self
     }
 }
 
-impl SpanExt for pest_typed::Span<'_> {
-    fn to_untyped_span(&self) -> pest::Span {
-        pest::Span::new(self.get_input(), self.start(), self.end()).unwrap()
-    }
-}
-
-pub trait SpannedExt<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> {
+pub trait TypedRuleExt<'a> {
     fn err(&self, message: impl Into<String>) -> SourceError;
     fn str(&self) -> &'a str;
-    fn trim_one(&self) -> pest_typed::Span<'a>;
+    fn trim_one(&self) -> Span<'a>;
 }
 
-impl<'a, R: pest_typed::RuleType, T: pest_typed::Spanned<'a, R>> SpannedExt<'a, R, T> for T {
+impl<'a, T: gen::TypedRule<'a>> TypedRuleExt<'a> for T {
     fn err(&self, message: impl Into<String>) -> SourceError {
         self.span().err(message.into())
     }
     fn str(&self) -> &'a str {
         self.span().as_str()
     }
-    fn trim_one(&self) -> pest_typed::Span<'a> {
+    fn trim_one(&self) -> Span<'a> {
         let span = self.span();
         let n = span.as_str().len();
         assert!(n >= 2, "{}", self.err("no end chars to trim"));

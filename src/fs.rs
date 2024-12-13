@@ -5,15 +5,18 @@ use core::fmt::Write;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use bumpalo::Bump;
 
 /// A stateful helper for loading source files from a list of include directories to be searched.
 pub struct Loader {
-    /// The list of directories to search
+    /// directories to search
     search_path: Vec<PathBuf>,
     /// cache of previously loaded files
     file_contents: Mutex<HashMap<PathBuf, Option<Vec<u8>>>>,
     /// existing parent directories of files observed not to exist
     parents_of_missing: Mutex<HashSet<PathBuf>>,
+    /// arena allocator kept for convenience of the parser
+    pub arena: Bump,
 }
 
 impl Loader {
@@ -22,6 +25,7 @@ impl Loader {
             search_path,
             file_contents: Default::default(),
             parents_of_missing: Default::default(),
+            arena: Default::default(),
         }
     }
 

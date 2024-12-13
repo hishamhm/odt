@@ -41,10 +41,10 @@ impl SourceError {
     }
 }
 
-impl From<Box<Error<Rule>>> for SourceError {
-    fn from(pest_error: Box<Error<Rule>>) -> Self {
-        let src = "";
-        let buffer = src.as_bytes().as_ptr_range();
+impl From<Error<Rule>> for SourceError {
+    fn from(pest_error: Error<Rule>) -> Self {
+        let pest_error = Box::new(pest_error);
+        let buffer = "".as_bytes().as_ptr_range();
         SourceError { pest_error, buffer }
     }
 }

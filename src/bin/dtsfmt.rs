@@ -20,8 +20,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err("cannot reformat stdin in-place".into());
         }
         let source = std::io::read_to_string(std::io::stdin())?;
-        let ast = odt::parse_untyped::parse(&source)?;
-        let output = odt::print::format(ast);
+        let tree = odt::parse::parse_untyped(&source)?;
+        let output = odt::print::format(tree);
         print!("{}", output);
         return Ok(());
     }
@@ -35,15 +35,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
         };
-        let ast = match odt::parse_untyped::parse(&source) {
-            Ok(ast) => ast,
+        let tree = match odt::parse::parse_untyped(&source) {
+            Ok(tree) => tree,
             Err(err) => {
                 eprintln!("parsing {filename:?}:\n{err}");
                 success = false;
                 continue;
             }
         };
-        let output = odt::print::format(ast);
+        let output = odt::print::format(tree);
         if args.in_place {
             // TODO:  Write to a temporary file and rename over the original.
             // Reopening the file like this can lose data (if interrupted or the disk is full).

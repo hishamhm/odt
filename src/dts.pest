@@ -20,6 +20,9 @@
 //       /delete-node/ 0-9,._+*#?@;
 //   };
 
+// Rules which cannot be made silent, but we don't want in the typed tree.
+PESTLE_SKIP = { WHITESPACE | COMMENT }
+
 // Pest accepts the WHITESPACE and COMMENT rules between any other tokens
 // outside an atomic rule (introduced with '@' or '$').
 // We need these tokens when pretty-printing, so these rules are not silent.
@@ -31,7 +34,9 @@ BlockComment = @{ "/*" ~ (BlockComment | !"*/" ~ ANY)* ~ "*/" }
 LineComment = @{ "//" ~ (!newline ~ ANY)* }
 newline = _{ "\n" | "\r\n" }
 
-DtsFile = { Dts ~ EOI }
+// Use to match a whole tree instead of stopping at invalid input.
+// Note that outer comments will be matched by the '~'s in this rule, not Dts.
+DtsFile = {  SOI ~ Dts ~ EOI }
 
 /// Overall structure of a DTS file.
 Dts = { Header* ~ Include* ~ Memreserve* ~ TopDef* }
@@ -68,7 +73,7 @@ TopDelNode = { SlashDeleteNode ~ NodeReference ~ Semicolon }
 TopOmitNode = { SlashOmitIfNoRef ~ NodeReference ~ Semicolon }
 
 TopNode = { Label* ~ TopNodeName ~ NodeBody }
-TopNodeName = { ( RootNodeName | NodeReference ) }
+TopNodeName = { RootNodeName | NodeReference }
 // improve error messages by avoiding a partial parse of e.g. "/dts-v1;/" as "/"
 RootNodeName = @{ "/" ~ !('A'..'Z' | 'a'..'z' | '0'..'9') }
 
@@ -131,17 +136,17 @@ Expr = { TernaryPrec }
 // terms at that level with repetition.  This allows left-associative
 // evaluation without left recursion in the grammar or auxiliary "tail" rules.
 
-TernaryPrec = { #left = LogicalOrPrec ~ (QuestionMark ~ #mid = Expr ~ Colon ~ #right = Expr)? }
-LogicalOrPrec = { #left = LogicalAndPrec ~ (#op = LogicalOr ~ #right = LogicalAndPrec)* }
-LogicalAndPrec = { #left = BitwiseOrPrec ~ (#op = LogicalAnd ~ #right = BitwiseOrPrec)* }
-BitwiseOrPrec = { #left = BitwiseXorPrec ~ (#op = BitwiseOr ~ #right = BitwiseXorPrec)* }
-BitwiseXorPrec = { #left = BitwiseAndPrec ~ (#op = BitwiseXor ~ #right = BitwiseAndPrec)* }
-BitwiseAndPrec = { #left = EqualPrec ~ (#op = BitwiseAnd ~ #right = EqualPrec)* }
-EqualPrec = { #left = ComparePrec ~ (#op = EqualPrecOp ~ #right = ComparePrec)* }
-ComparePrec = { #left = ShiftPrec ~ (#op = ComparePrecOp ~ #right = ShiftPrec)* }
-ShiftPrec = { #left = AddPrec ~ (#op = ShiftPrecOp ~ #right = AddPrec)* }
-AddPrec = { #left = MulPrec ~ (#op = AddPrecOp ~ #right = MulPrec)* }
-MulPrec = { #left = UnaryPrec ~ (#op = MulPrecOp ~ #right = UnaryPrec)* }
+TernaryPrec = { LogicalOrPrec ~ (QuestionMark ~ Expr ~ Colon ~ Expr)? }
+LogicalOrPrec = { LogicalAndPrec ~ (LogicalOr ~ LogicalAndPrec)* }
+LogicalAndPrec = { BitwiseOrPrec ~ (LogicalAnd ~ BitwiseOrPrec)* }
+BitwiseOrPrec = { BitwiseXorPrec ~ (BitwiseOr ~ BitwiseXorPrec)* }
+BitwiseXorPrec = { BitwiseAndPrec ~ (BitwiseXor ~ BitwiseAndPrec)* }
+BitwiseAndPrec = { EqualPrec ~ (BitwiseAnd ~ EqualPrec)* }
+EqualPrec = { ComparePrec ~ (EqualPrecOp ~ ComparePrec)* }
+ComparePrec = { ShiftPrec ~ (ComparePrecOp ~ ShiftPrec)* }
+ShiftPrec = { AddPrec ~ (ShiftPrecOp ~ AddPrec)* }
+AddPrec = { MulPrec ~ (AddPrecOp ~ MulPrec)* }
+MulPrec = { UnaryPrec ~ (MulPrecOp ~ UnaryPrec)* }
 UnaryPrec = { UnaryExpr | ParenExpr | IntLiteral }
 UnaryExpr = { UnaryOp ~ UnaryPrec }
 

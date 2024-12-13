@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let loader = odt::fs::Loader::new(args.include);
     let input = &args.input_path;
     let dts = odt::parse::parse_with_includes(&loader, input).map_err(|e| loader.infer_path(e))?;
-    let root = odt::eval::eval(dts).map_err(|e| loader.infer_path(e))?;
+    let root = odt::eval::eval(&dts).map_err(|e| loader.infer_path(e))?;
     let dtb = odt::flat::serialize(&root);
     let mut goal = String::from("-");
     let mut writer: Box<dyn Write> = if let Some(outfile) = args.out {
