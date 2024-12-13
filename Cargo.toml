@@ -11,6 +11,7 @@ pest_derive = { version = "2.7.15", features = ["grammar-extras"] }
 pest_typed = "0.16.0"
 pest_typed_derive = { version = "0.16.0", features = ["grammar-extras"] }
 clap = { version = "4.5.21", features = ["derive"] }
+bumpalo = { version = "3.16.0", features = ["collections"] }
 
 [features]
 wrapping-arithmetic = []

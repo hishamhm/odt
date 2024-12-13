@@ -31,7 +31,7 @@ BlockComment = @{ "/*" ~ (BlockComment | !"*/" ~ ANY)* ~ "*/" }
 LineComment = @{ "//" ~ (!newline ~ ANY)* }
 newline = _{ "\n" | "\r\n" }
 
-DtsFile = { SOI ~ Dts ~ EOI }
+DtsFile = { Dts ~ EOI }
 
 /// Overall structure of a DTS file.
 Dts = { Header* ~ Include* ~ Memreserve* ~ TopDef* }
@@ -57,7 +57,7 @@ Plugin = { SlashPlugin ~ Semicolon }
 
 // DIFF: accepts /include/ anywhere, not just at file scope
 Include = ${ SlashInclude ~ IncludeWhitespace ~ QuotedString }
-IncludeWhitespace = _{ WHITESPACE* }
+IncludeWhitespace = @{ WHITESPACE* }
 
 Memreserve = { Label* ~ SlashMemreserve ~ MemreserveArg ~ MemreserveArg ~ Semicolon }
 MemreserveArg = { ParenExpr | IntLiteral }
@@ -74,15 +74,15 @@ RootNodeName = @{ "/" ~ !('A'..'Z' | 'a'..'z' | '0'..'9') }
 
 Label = @{ LabelName ~ ":" }
 LabelName = @{ labelname_head ~ labelname_rest* }
-labelname_head = @{ 'A'..'Z' | "_" | 'a'..'z' }
-labelname_rest = @{ 'A'..'Z' | "_" | 'a'..'z' | '0'..'9' }
+labelname_head = _{ 'A'..'Z' | "_" | 'a'..'z' }
+labelname_rest = _{ 'A'..'Z' | "_" | 'a'..'z' | '0'..'9' }
 
 NodeReference = @{ ("&" ~ LabelName) | ("&{" ~ NodePath ~ "}") }
 
 // dtc will accept and normalize node paths such as "/x///y/".
 // label-relative references such as &{label/child/subnode} also work.
 NodePath = @{ nodepathchar+ }
-nodepathchar = @{ nodechar | "/" }
+nodepathchar = _{ nodechar | "/" }
 
 NodeBody = { OpenNode ~ NodeContents ~ CloseNode ~ EndNode }
 OpenNode = { "{" }
@@ -102,14 +102,14 @@ ChildNodePrefix = { Label | SlashOmitIfNoRef }
 
 NodeName = @{ "\\"? ~ nodechar+ }
 // dtc accepts all of these during parsing; later validation forbids some.
-nodechar = @{ 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
+nodechar = _{ 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
 
 Prop = { Label* ~ PropName ~ (PropAssign ~ PropValue)? ~ Semicolon }
 PropAssign = { "=" }
 
 PropName = @{ "\\"? ~ propchar+ }
 // dtc accepts all of these during parsing; later validation forbids some.
-propchar = @{ 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
+propchar = _{ 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
 
 PropValue = { LabeledValue ~ (Comma ~ LabeledValue)* }
 Comma = { "," }
@@ -183,7 +183,7 @@ IntLiteral = ${ CharLiteral | NumericLiteral }
 // To improve error messages, escape sequences are not fully parsed here.
 // DIFF: dtc's parsing of '\\' is broken -- but only if there is a later ' in the file!
 CharLiteral = @{ "'" ~ singlequotedchar* ~ "'" }
-singlequotedchar = @{ !("'" | "\\") ~ ANY | "\\" ~ ANY }
+singlequotedchar = _{ !("'" | "\\") ~ ANY | "\\" ~ ANY }
 
 NumericLiteral = @{ (HexLiteral | OctalLiteral | DecimalLiteral) ~ NumericSuffix? }
 HexLiteral = @{ ^"0x" ~ ('0'..'9' | 'A'..'F' | 'a'..'f')* }
@@ -192,7 +192,7 @@ DecimalLiteral = @{ '1'..'9' ~ ('0'..'9')* }
 NumericSuffix = @{ "ULL" | "LL" | "UL" | "L" | "U" }
 
 QuotedString = @{ "\"" ~ doublequotedchar* ~ "\"" }
-doublequotedchar = @{ !("\"" | "\\") ~ ANY | "\\" ~ ANY }
+doublequotedchar = _{ !("\"" | "\\") ~ ANY | "\\" ~ ANY }
 
 ByteString = { OpenSquare ~ LabelOrHexByte* ~ CloseSquare }
 LabelOrHexByte = { Label | HexByte }

@@ -1,5 +1,7 @@
 //! Facilities for parsing DTS files and expanding "/include/" directives.
 
+pub mod gen;
+
 use crate::error::SourceError;
 use crate::fs::Loader;
 use core::ops::Range;

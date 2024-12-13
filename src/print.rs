@@ -106,7 +106,7 @@ impl PrettyPrinter {
             return;
         }
 
-        if rule == Rule::WHITESPACE {
+        if rule == Rule::WHITESPACE || rule == Rule::IncludeWhitespace {
             self.seen_lines += text.chars().filter(|&c| c == '\n').count();
             return;
         }
