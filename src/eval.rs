@@ -109,13 +109,15 @@ fn visit_phandle_references(
 ) -> Result<(), SourceError> {
     for (_, tempvalue) in &node.properties {
         if let TempValue::Ast(propvalue) = tempvalue {
-            let values = propvalue.Value();
+            let values = propvalue.LabeledValue();
             for value in [values.0].into_iter().chain(values.1) {
-                if let Some(cells) = value.Cells() {
-                    for cell in cells.Cell().into_iter().flatten() {
-                        if let Some(phandle) = cell.NodeReference() {
-                            let target = labels.resolve(phandle)?;
-                            need_phandles.replace(target);
+                if let Some(cells) = value.Value().Cells() {
+                    for labelorcell in cells.LabelOrCell() {
+                        if let Some(cell) = labelorcell.Cell() {
+                            if let Some(phandle) = cell.NodeReference() {
+                                let target = labels.resolve(phandle)?;
+                                need_phandles.replace(target);
+                            }
                         }
                     }
                 }
@@ -163,8 +165,9 @@ fn evaluate_propvalue(
     propvalue: PropValue,
 ) -> Result<Vec<u8>, SourceError> {
     let mut r = vec![];
-    let values = propvalue.Value();
+    let values = propvalue.LabeledValue();
     for value in [values.0].into_iter().chain(values.1) {
+        let value = value.Value();
         // TODO: use match here
         if let Some(cells) = value.Cells() {
             let bits = match cells.Bits() {
@@ -177,7 +180,10 @@ fn evaluate_propvalue(
                     }
                 }
             };
-            for cell in cells.Cell().into_iter().flatten() {
+            for labelorcell in cells.LabelOrCell() {
+                let Some(cell) = labelorcell.Cell() else {
+                    continue;
+                };
                 if let Some(noderef) = cell.NodeReference() {
                     let path = LabelResolver(node_labels, root).resolve(noderef)?;
                     let node = root.walk(path.segments()).unwrap();
@@ -230,10 +236,12 @@ fn evaluate_propvalue(
             r.extend(target.display().as_bytes());
             r.push(0);
         } else if let Some(bytestring) = value.ByteString() {
-            for hexbyte in bytestring.HexByte().into_iter().flatten() {
-                let s = hexbyte.str();
-                let b = u8::from_str_radix(s, 16).unwrap(); // parser has already validated
-                r.push(b);
+            for labelorhexbyte in bytestring.LabelOrHexByte() {
+                if let Some(hexbyte) = labelorhexbyte.HexByte() {
+                    let s = hexbyte.str();
+                    let b = u8::from_str_radix(s, 16).unwrap(); // parser has already validated
+                    r.push(b);
+                }
             }
         } else if let Some(incbin) = value.Incbin() {
             unimplemented!("{}", incbin.err("/incbin/ unimplemented"));
@@ -731,8 +739,10 @@ fn fill_temp_node<'a, 'b: 'a>(
             let name = childnode.NodeName().unescape_name();
             let child_path = path.join(name);
             let child = node.add_child(name);
-            for label in childnode.Label().into_iter().flatten() {
-                add_label(node_labels, label, &child_path)?;
+            for prefix in childnode.ChildNodePrefix() {
+                if let Some(label) = prefix.Label() {
+                    add_label(node_labels, label, &child_path)?;
+                }
             }
             let contents = childnode.NodeBody().NodeContents();
             fill_temp_node(node_labels, child, &child_path, contents)?;

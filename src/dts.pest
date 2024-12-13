@@ -23,7 +23,7 @@
 // Pest accepts the WHITESPACE and COMMENT rules between any other tokens
 // outside an atomic rule (introduced with '@' or '$').
 // We need these tokens when pretty-printing, so these rules are not silent.
-WHITESPACE = { " " | "\t" | "\r" | "\n" }
+WHITESPACE = @{ " " | "\t" | "\r" | "\n" }
 COMMENT = ${ BlockComment | LineComment }
 BlockComment = @{ "/*" ~ (BlockComment | !"*/" ~ ANY)* ~ "*/" }
 // Line comments do not contain their own newline.
@@ -59,7 +59,8 @@ Plugin = { SlashPlugin ~ Semicolon }
 Include = ${ SlashInclude ~ IncludeWhitespace ~ QuotedString }
 IncludeWhitespace = _{ WHITESPACE* }
 
-Memreserve = { Label* ~ SlashMemreserve ~ (ParenExpr | IntLiteral){2} ~ Semicolon }
+Memreserve = { Label* ~ SlashMemreserve ~ MemreserveArg ~ MemreserveArg ~ Semicolon }
+MemreserveArg = { ParenExpr | IntLiteral }
 
 // DIFF: dtc requires the first TopDef to be an unlabeled TopNode
 TopDef = { TopDelNode | TopOmitNode | TopNode }
@@ -73,15 +74,15 @@ RootNodeName = @{ "/" ~ !('A'..'Z' | 'a'..'z' | '0'..'9') }
 
 Label = @{ LabelName ~ ":" }
 LabelName = @{ labelname_head ~ labelname_rest* }
-labelname_head = { 'A'..'Z' | "_" | 'a'..'z' }
-labelname_rest = { 'A'..'Z' | "_" | 'a'..'z' | '0'..'9' }
+labelname_head = @{ 'A'..'Z' | "_" | 'a'..'z' }
+labelname_rest = @{ 'A'..'Z' | "_" | 'a'..'z' | '0'..'9' }
 
 NodeReference = @{ ("&" ~ LabelName) | ("&{" ~ NodePath ~ "}") }
 
 // dtc will accept and normalize node paths such as "/x///y/".
 // label-relative references such as &{label/child/subnode} also work.
 NodePath = @{ nodepathchar+ }
-nodepathchar = { nodechar | "/" }
+nodepathchar = @{ nodechar | "/" }
 
 NodeBody = { OpenNode ~ NodeContents ~ CloseNode ~ EndNode }
 OpenNode = { "{" }
@@ -91,30 +92,33 @@ NodeContents = { PropDef* ~ ChildDef* }
 PropDef = { DelProp | Prop }
 ChildDef = { DelNode | ChildNode }
 
-DelNode = { DelNodeSuperfluousPrefix? ~ SlashDeleteNode ~ NodeName ~ Semicolon }
-DelNodeSuperfluousPrefix = { (Label | SlashOmitIfNoRef)* }
-DelProp = { DelPropSuperfluousPrefix? ~ SlashDeleteProperty ~ PropName ~ Semicolon }
-DelPropSuperfluousPrefix = { Label* }
+DelNode = { DelNodeSuperfluousPrefix* ~ SlashDeleteNode ~ NodeName ~ Semicolon }
+DelNodeSuperfluousPrefix = { Label | SlashOmitIfNoRef }
+DelProp = { DelPropSuperfluousPrefix* ~ SlashDeleteProperty ~ PropName ~ Semicolon }
+DelPropSuperfluousPrefix = { Label }
 
-ChildNode = { (Label | SlashOmitIfNoRef)* ~ NodeName ~ NodeBody }
+ChildNode = { ChildNodePrefix* ~ NodeName ~ NodeBody }
+ChildNodePrefix = { Label | SlashOmitIfNoRef }
 
 NodeName = @{ "\\"? ~ nodechar+ }
 // dtc accepts all of these during parsing; later validation forbids some.
-nodechar = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
+nodechar = @{ 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
 
 Prop = { Label* ~ PropName ~ (PropAssign ~ PropValue)? ~ Semicolon }
 PropAssign = { "=" }
 
 PropName = @{ "\\"? ~ propchar+ }
 // dtc accepts all of these during parsing; later validation forbids some.
-propchar = { 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
+propchar = @{ 'A'..'Z' | 'a'..'z' | '0'..'9' | "#" | "*" | "+" | "," | "-" | "." | "?" | "@" | "_" }
 
-PropValue = { Value ~ (Comma ~ Value)* }
+PropValue = { LabeledValue ~ (Comma ~ LabeledValue)* }
 Comma = { "," }
-Value = { Label* ~ (Cells | QuotedString | NodeReference | ByteString | Incbin) ~ Label* }
+LabeledValue = { Label* ~ Value ~ Label* }
+Value = { Cells | QuotedString | NodeReference | ByteString | Incbin }
 
-Cells = { Bits? ~ OpenCells ~ (Cell | Label)* ~ CloseCells }
+Cells = { Bits? ~ OpenCells ~ LabelOrCell* ~ CloseCells }
 Bits = { SlashBits ~ NumericLiteral }
+LabelOrCell = { Label | Cell }
 OpenCells = { "<" }
 CloseCells = { ">" }
 
@@ -179,21 +183,22 @@ IntLiteral = ${ CharLiteral | NumericLiteral }
 // To improve error messages, escape sequences are not fully parsed here.
 // DIFF: dtc's parsing of '\\' is broken -- but only if there is a later ' in the file!
 CharLiteral = @{ "'" ~ singlequotedchar* ~ "'" }
-singlequotedchar = { !("'" | "\\") ~ ANY | "\\" ~ ANY }
+singlequotedchar = @{ !("'" | "\\") ~ ANY | "\\" ~ ANY }
 
 NumericLiteral = @{ (HexLiteral | OctalLiteral | DecimalLiteral) ~ NumericSuffix? }
 HexLiteral = @{ ^"0x" ~ ('0'..'9' | 'A'..'F' | 'a'..'f')* }
 OctalLiteral = @{ "0" ~ ('0'..'7')* }
 DecimalLiteral = @{ '1'..'9' ~ ('0'..'9')* }
-NumericSuffix = { "ULL" | "LL" | "UL" | "L" | "U" }
+NumericSuffix = @{ "ULL" | "LL" | "UL" | "L" | "U" }
 
 QuotedString = @{ "\"" ~ doublequotedchar* ~ "\"" }
-doublequotedchar = { !("\"" | "\\") ~ ANY | "\\" ~ ANY }
+doublequotedchar = @{ !("\"" | "\\") ~ ANY | "\\" ~ ANY }
 
-ByteString = { OpenSquare ~ (Label | HexByte)* ~ CloseSquare }
+ByteString = { OpenSquare ~ LabelOrHexByte* ~ CloseSquare }
+LabelOrHexByte = { Label | HexByte }
 OpenSquare = { "[" }
 CloseSquare = { "]" }
 HexByte = @{ ('0'..'9' | 'A'..'F' | 'a'..'f'){2} }
 
 Incbin = { SlashIncbin ~ OpenParen ~ IncbinArgs ~ CloseParen }
-IncbinArgs = { QuotedString ~ (Comma ~ NumericLiteral){2}? }
+IncbinArgs = { QuotedString ~ (Comma ~ NumericLiteral)* }
