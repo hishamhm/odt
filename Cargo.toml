@@ -20,9 +20,6 @@ name = "dtc"
 [[bin]]
 name = "dtsfmt"
 
-[[bin]]
-name = "genexpr"
-
 [dev-dependencies]
 pretty_assertions = "1.4.1"
 
