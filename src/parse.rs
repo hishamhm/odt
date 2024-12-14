@@ -1,20 +1,18 @@
 //! Facilities for parsing DTS files and expanding "/include/" directives.
 
-pub mod gen;
-
 use crate::error::SourceError;
 use crate::fs::Loader;
 use bumpalo::collections::Vec;
 use bumpalo::Bump;
 use core::ops::Range;
-use gen::{Dts, DtsFile, TypedRule};
+use gen::{Dts, DtsFile};
 use pest::iterators::Pair;
 use pest::{Parser, Span};
-use pest_derive::Parser;
 use std::path::Path;
 
-#[derive(Parser)]
-#[grammar = "dts.pest"]
+#[derive(pest_derive::Parser, pestle::TypedRules)]
+#[grammar = "src/dts.pest"]
+#[typed_mod = "gen"]
 pub struct DtsParser;
 
 /// This is pest's untyped grammar, which is convenient for clients that
