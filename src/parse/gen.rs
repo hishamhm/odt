@@ -27,9 +27,46 @@ fn to_option<T>(mut v: Vec<T>) -> Option<T> {
     }
 }
 
-// applied PESTLE_SKIP
+/// atomic rule WHITESPACE
+#[derive(Debug)]
+pub struct WHITESPACE<'i>(Span<'i>);
 
+impl<'i> TypedRule<'i> for WHITESPACE<'i> {
+    const UNTYPED_RULE: Rule = Rule::WHITESPACE;
+    fn span(&self) -> &Span<'i> {
+        &self.0
+    }
+    fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
+        assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
+        alloc.alloc(Self(pair.as_span()))
+    }
+}
 
+/// enum rule COMMENT
+#[derive(Debug)]
+pub enum COMMENT<'i> {
+    BlockComment(&'i BlockComment<'i>),
+    LineComment(&'i LineComment<'i>),
+}
+
+impl<'i> TypedRule<'i> for COMMENT<'i> {
+    const UNTYPED_RULE: Rule = Rule::COMMENT;
+    fn span(&self) -> &Span<'i> {
+        match self {
+            Self::BlockComment(x) => x.span(),
+            Self::LineComment(x) => x.span(),
+        }
+    }
+    fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
+        assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
+        let inner = pair.into_inner().next().unwrap();
+        alloc.alloc(match inner.as_rule() {
+            Rule::BlockComment => COMMENT::BlockComment(BlockComment::build(inner, alloc)),
+            Rule::LineComment => COMMENT::LineComment(LineComment::build(inner, alloc)),
+            rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+        })
+    }
+}
 
 /// atomic rule BlockComment
 #[derive(Debug)]
@@ -61,8 +98,6 @@ impl<'i> TypedRule<'i> for LineComment<'i> {
     }
 }
 
-// silent rule newline generates no code
-
 /// sequence rule DtsFile
 #[derive(Debug)]
 pub struct DtsFile<'i> {
@@ -83,10 +118,7 @@ impl<'i> TypedRule<'i> for DtsFile<'i> {
         for child in pair.into_inner() {
             match child.as_rule() {
                 Rule::Dts => _tmp_dts.push(Dts::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -125,10 +157,7 @@ impl<'i> TypedRule<'i> for Dts<'i> {
                 Rule::Include => _tmp_include.push(Include::build(child, alloc)),
                 Rule::Memreserve => _tmp_memreserve.push(Memreserve::build(child, alloc)),
                 Rule::TopDef => _tmp_top_def.push(TopDef::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -314,10 +343,7 @@ impl<'i> TypedRule<'i> for Header<'i> {
             match child.as_rule() {
                 Rule::Version => _tmp_version.push(Version::build(child, alloc)),
                 Rule::Plugin => _tmp_plugin.push(Plugin::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -351,10 +377,7 @@ impl<'i> TypedRule<'i> for Version<'i> {
             match child.as_rule() {
                 Rule::SlashDtsV1 => _tmp_slash_dts_v1.push(SlashDtsV1::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -388,10 +411,7 @@ impl<'i> TypedRule<'i> for Plugin<'i> {
             match child.as_rule() {
                 Rule::SlashPlugin => _tmp_slash_plugin.push(SlashPlugin::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -428,10 +448,7 @@ impl<'i> TypedRule<'i> for Include<'i> {
                 Rule::SlashInclude => _tmp_slash_include.push(SlashInclude::build(child, alloc)),
                 Rule::IncludeWhitespace => _tmp_include_whitespace.push(IncludeWhitespace::build(child, alloc)),
                 Rule::QuotedString => _tmp_quoted_string.push(QuotedString::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -487,10 +504,7 @@ impl<'i> TypedRule<'i> for Memreserve<'i> {
                 Rule::SlashMemreserve => _tmp_slash_memreserve.push(SlashMemreserve::build(child, alloc)),
                 Rule::MemreserveArg => _tmp_memreserve_arg.push(MemreserveArg::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -584,10 +598,7 @@ impl<'i> TypedRule<'i> for TopDelNode<'i> {
                 Rule::SlashDeleteNode => _tmp_slash_delete_node.push(SlashDeleteNode::build(child, alloc)),
                 Rule::NodeReference => _tmp_node_reference.push(NodeReference::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -625,10 +636,7 @@ impl<'i> TypedRule<'i> for TopOmitNode<'i> {
                 Rule::SlashOmitIfNoRef => _tmp_slash_omit_if_no_ref.push(SlashOmitIfNoRef::build(child, alloc)),
                 Rule::NodeReference => _tmp_node_reference.push(NodeReference::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -666,10 +674,7 @@ impl<'i> TypedRule<'i> for TopNode<'i> {
                 Rule::Label => _tmp_label.push(Label::build(child, alloc)),
                 Rule::TopNodeName => _tmp_top_node_name.push(TopNodeName::build(child, alloc)),
                 Rule::NodeBody => _tmp_node_body.push(NodeBody::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -752,10 +757,6 @@ impl<'i> TypedRule<'i> for LabelName<'i> {
     }
 }
 
-// silent rule labelname_head generates no code
-
-// silent rule labelname_rest generates no code
-
 /// atomic rule NodeReference
 #[derive(Debug)]
 pub struct NodeReference<'i>(Span<'i>);
@@ -786,8 +787,6 @@ impl<'i> TypedRule<'i> for NodePath<'i> {
     }
 }
 
-// silent rule nodepathchar generates no code
-
 /// sequence rule NodeBody
 #[derive(Debug)]
 pub struct NodeBody<'i> {
@@ -817,10 +816,7 @@ impl<'i> TypedRule<'i> for NodeBody<'i> {
                 Rule::NodeContents => _tmp_node_contents.push(NodeContents::build(child, alloc)),
                 Rule::CloseNode => _tmp_close_node.push(CloseNode::build(child, alloc)),
                 Rule::EndNode => _tmp_end_node.push(EndNode::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -883,10 +879,7 @@ impl<'i> TypedRule<'i> for EndNode<'i> {
         for child in pair.into_inner() {
             match child.as_rule() {
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -919,10 +912,7 @@ impl<'i> TypedRule<'i> for NodeContents<'i> {
             match child.as_rule() {
                 Rule::PropDef => _tmp_prop_def.push(PropDef::build(child, alloc)),
                 Rule::ChildDef => _tmp_child_def.push(ChildDef::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1014,10 +1004,7 @@ impl<'i> TypedRule<'i> for DelNode<'i> {
                 Rule::SlashDeleteNode => _tmp_slash_delete_node.push(SlashDeleteNode::build(child, alloc)),
                 Rule::NodeName => _tmp_node_name.push(NodeName::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1085,10 +1072,7 @@ impl<'i> TypedRule<'i> for DelProp<'i> {
                 Rule::SlashDeleteProperty => _tmp_slash_delete_property.push(SlashDeleteProperty::build(child, alloc)),
                 Rule::PropName => _tmp_prop_name.push(PropName::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1121,10 +1105,7 @@ impl<'i> TypedRule<'i> for DelPropSuperfluousPrefix<'i> {
         for child in pair.into_inner() {
             match child.as_rule() {
                 Rule::Label => _tmp_label.push(Label::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1160,10 +1141,7 @@ impl<'i> TypedRule<'i> for ChildNode<'i> {
                 Rule::ChildNodePrefix => _tmp_child_node_prefix.push(ChildNodePrefix::build(child, alloc)),
                 Rule::NodeName => _tmp_node_name.push(NodeName::build(child, alloc)),
                 Rule::NodeBody => _tmp_node_body.push(NodeBody::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1216,8 +1194,6 @@ impl<'i> TypedRule<'i> for NodeName<'i> {
     }
 }
 
-// silent rule nodechar generates no code
-
 /// sequence rule Prop
 #[derive(Debug)]
 pub struct Prop<'i> {
@@ -1250,10 +1226,7 @@ impl<'i> TypedRule<'i> for Prop<'i> {
                 Rule::PropAssign => _tmp_prop_assign.push(PropAssign::build(child, alloc)),
                 Rule::PropValue => _tmp_prop_value.push(PropValue::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1297,8 +1270,6 @@ impl<'i> TypedRule<'i> for PropName<'i> {
     }
 }
 
-// silent rule propchar generates no code
-
 /// sequence rule PropValue
 #[derive(Debug)]
 pub struct PropValue<'i> {
@@ -1322,10 +1293,7 @@ impl<'i> TypedRule<'i> for PropValue<'i> {
             match child.as_rule() {
                 Rule::LabeledValue => _tmp_labeled_value.push(LabeledValue::build(child, alloc)),
                 Rule::Comma => _tmp_comma.push(Comma::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1374,10 +1342,7 @@ impl<'i> TypedRule<'i> for LabeledValue<'i> {
             match child.as_rule() {
                 Rule::Label => _tmp_label.push(Label::build(child, alloc)),
                 Rule::Value => _tmp_value.push(Value::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1452,10 +1417,7 @@ impl<'i> TypedRule<'i> for Cells<'i> {
                 Rule::OpenCells => _tmp_open_cells.push(OpenCells::build(child, alloc)),
                 Rule::LabelOrCell => _tmp_label_or_cell.push(LabelOrCell::build(child, alloc)),
                 Rule::CloseCells => _tmp_close_cells.push(CloseCells::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1491,10 +1453,7 @@ impl<'i> TypedRule<'i> for Bits<'i> {
             match child.as_rule() {
                 Rule::SlashBits => _tmp_slash_bits.push(SlashBits::build(child, alloc)),
                 Rule::NumericLiteral => _tmp_numeric_literal.push(NumericLiteral::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1616,10 +1575,7 @@ impl<'i> TypedRule<'i> for ParenExpr<'i> {
                 Rule::OpenParen => _tmp_open_paren.push(OpenParen::build(child, alloc)),
                 Rule::Expr => _tmp_expr.push(Expr::build(child, alloc)),
                 Rule::CloseParen => _tmp_close_paren.push(CloseParen::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1651,10 +1607,7 @@ impl<'i> TypedRule<'i> for Expr<'i> {
         for child in pair.into_inner() {
             match child.as_rule() {
                 Rule::TernaryPrec => _tmp_ternary_prec.push(TernaryPrec::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1693,10 +1646,7 @@ impl<'i> TypedRule<'i> for TernaryPrec<'i> {
                 Rule::QuestionMark => _tmp_question_mark.push(QuestionMark::build(child, alloc)),
                 Rule::Expr => _tmp_expr.push(Expr::build(child, alloc)),
                 Rule::Colon => _tmp_colon.push(Colon::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1732,10 +1682,7 @@ impl<'i> TypedRule<'i> for LogicalOrPrec<'i> {
             match child.as_rule() {
                 Rule::LogicalAndPrec => _tmp_logical_and_prec.push(LogicalAndPrec::build(child, alloc)),
                 Rule::LogicalOr => _tmp_logical_or.push(LogicalOr::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1769,10 +1716,7 @@ impl<'i> TypedRule<'i> for LogicalAndPrec<'i> {
             match child.as_rule() {
                 Rule::BitwiseOrPrec => _tmp_bitwise_or_prec.push(BitwiseOrPrec::build(child, alloc)),
                 Rule::LogicalAnd => _tmp_logical_and.push(LogicalAnd::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1806,10 +1750,7 @@ impl<'i> TypedRule<'i> for BitwiseOrPrec<'i> {
             match child.as_rule() {
                 Rule::BitwiseXorPrec => _tmp_bitwise_xor_prec.push(BitwiseXorPrec::build(child, alloc)),
                 Rule::BitwiseOr => _tmp_bitwise_or.push(BitwiseOr::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1843,10 +1784,7 @@ impl<'i> TypedRule<'i> for BitwiseXorPrec<'i> {
             match child.as_rule() {
                 Rule::BitwiseAndPrec => _tmp_bitwise_and_prec.push(BitwiseAndPrec::build(child, alloc)),
                 Rule::BitwiseXor => _tmp_bitwise_xor.push(BitwiseXor::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1880,10 +1818,7 @@ impl<'i> TypedRule<'i> for BitwiseAndPrec<'i> {
             match child.as_rule() {
                 Rule::EqualPrec => _tmp_equal_prec.push(EqualPrec::build(child, alloc)),
                 Rule::BitwiseAnd => _tmp_bitwise_and.push(BitwiseAnd::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1917,10 +1852,7 @@ impl<'i> TypedRule<'i> for EqualPrec<'i> {
             match child.as_rule() {
                 Rule::ComparePrec => _tmp_compare_prec.push(ComparePrec::build(child, alloc)),
                 Rule::EqualPrecOp => _tmp_equal_prec_op.push(EqualPrecOp::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1954,10 +1886,7 @@ impl<'i> TypedRule<'i> for ComparePrec<'i> {
             match child.as_rule() {
                 Rule::ShiftPrec => _tmp_shift_prec.push(ShiftPrec::build(child, alloc)),
                 Rule::ComparePrecOp => _tmp_compare_prec_op.push(ComparePrecOp::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -1991,10 +1920,7 @@ impl<'i> TypedRule<'i> for ShiftPrec<'i> {
             match child.as_rule() {
                 Rule::AddPrec => _tmp_add_prec.push(AddPrec::build(child, alloc)),
                 Rule::ShiftPrecOp => _tmp_shift_prec_op.push(ShiftPrecOp::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -2028,10 +1954,7 @@ impl<'i> TypedRule<'i> for AddPrec<'i> {
             match child.as_rule() {
                 Rule::MulPrec => _tmp_mul_prec.push(MulPrec::build(child, alloc)),
                 Rule::AddPrecOp => _tmp_add_prec_op.push(AddPrecOp::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -2065,10 +1988,7 @@ impl<'i> TypedRule<'i> for MulPrec<'i> {
             match child.as_rule() {
                 Rule::UnaryPrec => _tmp_unary_prec.push(UnaryPrec::build(child, alloc)),
                 Rule::MulPrecOp => _tmp_mul_prec_op.push(MulPrecOp::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -2131,10 +2051,7 @@ impl<'i> TypedRule<'i> for UnaryExpr<'i> {
             match child.as_rule() {
                 Rule::UnaryOp => _tmp_unary_op.push(UnaryOp::build(child, alloc)),
                 Rule::UnaryPrec => _tmp_unary_prec.push(UnaryPrec::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -2729,8 +2646,6 @@ impl<'i> TypedRule<'i> for CharLiteral<'i> {
     }
 }
 
-// silent rule singlequotedchar generates no code
-
 /// atomic rule NumericLiteral
 #[derive(Debug)]
 pub struct NumericLiteral<'i>(Span<'i>);
@@ -2821,8 +2736,6 @@ impl<'i> TypedRule<'i> for QuotedString<'i> {
     }
 }
 
-// silent rule doublequotedchar generates no code
-
 /// sequence rule ByteString
 #[derive(Debug)]
 pub struct ByteString<'i> {
@@ -2849,10 +2762,7 @@ impl<'i> TypedRule<'i> for ByteString<'i> {
                 Rule::OpenSquare => _tmp_open_square.push(OpenSquare::build(child, alloc)),
                 Rule::LabelOrHexByte => _tmp_label_or_hex_byte.push(LabelOrHexByte::build(child, alloc)),
                 Rule::CloseSquare => _tmp_close_square.push(CloseSquare::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -2964,10 +2874,7 @@ impl<'i> TypedRule<'i> for Incbin<'i> {
                 Rule::OpenParen => _tmp_open_paren.push(OpenParen::build(child, alloc)),
                 Rule::IncbinArgs => _tmp_incbin_args.push(IncbinArgs::build(child, alloc)),
                 Rule::CloseParen => _tmp_close_paren.push(CloseParen::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {
@@ -3006,10 +2913,7 @@ impl<'i> TypedRule<'i> for IncbinArgs<'i> {
                 Rule::QuotedString => _tmp_quoted_string.push(QuotedString::build(child, alloc)),
                 Rule::Comma => _tmp_comma.push(Comma::build(child, alloc)),
                 Rule::NumericLiteral => _tmp_numeric_literal.push(NumericLiteral::build(child, alloc)),
-                Rule::EOI => (),
-                Rule::WHITESPACE => (),
-                Rule::COMMENT => (),
-                rule => panic!("unexpected rule {rule:?} within {:?}", Self::UNTYPED_RULE),
+                _ => (),
             }
         }
         alloc.alloc(Self {

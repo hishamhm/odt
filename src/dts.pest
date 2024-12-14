@@ -20,9 +20,6 @@
 //       /delete-node/ 0-9,._+*#?@;
 //   };
 
-// Rules which cannot be made silent, but we don't want in the typed tree.
-PESTLE_SKIP = { WHITESPACE | COMMENT }
-
 // Pest accepts the WHITESPACE and COMMENT rules between any other tokens
 // outside an atomic rule (introduced with '@' or '$').
 // We need these tokens when pretty-printing, so these rules are not silent.
