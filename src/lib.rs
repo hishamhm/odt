@@ -1,5 +1,3 @@
-#![recursion_limit = "256"] // necessary for `cargo doc` on the typed parser
-
 pub mod error;
 pub mod eval;
 pub mod flat;
