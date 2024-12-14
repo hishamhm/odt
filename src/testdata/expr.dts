@@ -1,10 +1,32 @@
 /dts-v1/;
+
 / {
+// test clamping of shifts
 shift_left_all_bits = <0 ((~0) << 64)>;
 shift_right_all_bits = <0 ((~0) >> 64)>;
+
+// test lazy evaluation
 ternary_branch_left = <3 (1 ? 3/1 : 5/0)>;
 ternary_branch_right = <5 (0 ? 3/0 : 5/1)>;
+
+// basic test of operator precedence
 mul_add_precedence = <(1+(20*30)+2) (1+20*30+2)>;
+
+// test binary operator associativity
 minus_associativity = <((4-2)-1) (4-2-1)>;
 shift_associativity = <((3<<3)<<3) (3<<3<<3)>;
+
+// test ternary operator associativity
+ternary_expr_10005 = <(1?0:0?0:5) (1?0:(0?0:5))>;
+ternary_expr_10045 = <(1?0:0?4:5) (1?0:(0?4:5))>;
+ternary_expr_10305 = <(1?0:3?0:5) (1?0:(3?0:5))>;
+ternary_expr_10345 = <(1?0:3?4:5) (1?0:(3?4:5))>;
+ternary_expr_12000 = <(1?2:0?0:0) (1?2:(0?0:0))>;
+ternary_expr_12005 = <(1?2:0?0:5) (1?2:(0?0:5))>;
+ternary_expr_12040 = <(1?2:0?4:0) (1?2:(0?4:0))>;
+ternary_expr_12045 = <(1?2:0?4:5) (1?2:(0?4:5))>;
+ternary_expr_12300 = <(1?2:3?0:0) (1?2:(3?0:0))>;
+ternary_expr_12305 = <(1?2:3?0:5) (1?2:(3?0:5))>;
+ternary_expr_12340 = <(1?2:3?4:0) (1?2:(3?4:0))>;
+ternary_expr_12345 = <(1?2:3?4:5) (1?2:(3?4:5))>;
 };
