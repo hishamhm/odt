@@ -34,10 +34,10 @@ fn build_temp_tree<'i>(dts: &Dts<'i>) -> Result<(TempNode<'i>, LabelMap), Source
     if let Some(memres) = dts.memreserve.first() {
         unimplemented!("{}", memres.err("unimplemented"));
     }
-    for topdef in dts.topdef {
-        match topdef {
+    for top_def in dts.top_def {
+        match top_def {
             TopDef::TopNode(topnode) => {
-                let path = match topnode.topnodename {
+                let path = match topnode.top_node_name {
                     TopNodeName::NodeReference(noderef) => {
                         LabelResolver(&node_labels, &root).resolve(noderef)?
                     }
@@ -47,11 +47,11 @@ fn build_temp_tree<'i>(dts: &Dts<'i>) -> Result<(TempNode<'i>, LabelMap), Source
                 for label in topnode.label {
                     add_label(&mut node_labels, label, &path)?;
                 }
-                let contents = topnode.nodebody.nodecontents;
+                let contents = topnode.node_body.node_contents;
                 fill_temp_node(&mut node_labels, node, &path, contents)?;
             }
             TopDef::TopDelNode(topdelnode) => {
-                let noderef = topdelnode.nodereference;
+                let noderef = topdelnode.node_reference;
                 let target = LabelResolver(&node_labels, &root).resolve(noderef)?;
                 delete_node(&mut node_labels, &mut root, &target);
             }
@@ -109,10 +109,10 @@ fn visit_phandle_references(
 ) -> Result<(), SourceError> {
     for (_, tempvalue) in &node.properties {
         if let TempValue::Ast(propvalue) = tempvalue {
-            for labeledvalue in propvalue.labeledvalue {
-                if let Value::Cells(cells) = labeledvalue.value {
-                    for labelorcell in cells.labelorcell {
-                        if let LabelOrCell::Cell(Cell::NodeReference(phandle)) = labelorcell {
+            for labeled_value in propvalue.labeled_value {
+                if let Value::Cells(cells) = labeled_value.value {
+                    for label_or_cell in cells.label_or_cell {
+                        if let LabelOrCell::Cell(Cell::NodeReference(phandle)) = label_or_cell {
                             let target = labels.resolve(phandle)?;
                             need_phandles.replace(target);
                         }
@@ -162,21 +162,21 @@ fn evaluate_propvalue(
     propvalue: &PropValue,
 ) -> Result<Vec<u8>, SourceError> {
     let mut r = vec![];
-    for labeledvalue in propvalue.labeledvalue {
-        match labeledvalue.value {
+    for labeled_value in propvalue.labeled_value {
+        match labeled_value.value {
             Value::Cells(cells) => {
                 let bits = match cells.bits {
                     None => 32,
                     Some(bits) => {
-                        let n = bits.numericliteral.eval()?;
+                        let n = bits.numeric_literal.eval()?;
                         match n {
                             8 | 16 | 32 | 64 => n,
                             _ => return Err(bits.err("bad bit width: must be 8, 16, 32, or 64")),
                         }
                     }
                 };
-                for labelorcell in cells.labelorcell {
-                    let LabelOrCell::Cell(cell) = labelorcell else {
+                for label_or_cell in cells.label_or_cell {
+                    let LabelOrCell::Cell(cell) = label_or_cell else {
                         continue;
                     };
                     let n = match cell {
@@ -231,9 +231,9 @@ fn evaluate_propvalue(
                 r.push(0);
             }
             Value::ByteString(bytestring) => {
-                for labelorhexbyte in bytestring.labelorhexbyte {
-                    if let LabelOrHexByte::HexByte(hexbyte) = labelorhexbyte {
-                        let s = hexbyte.str();
+                for label_or_hex_byte in bytestring.label_or_hex_byte {
+                    if let LabelOrHexByte::HexByte(hex_byte) = label_or_hex_byte {
+                        let s = hex_byte.str();
                         let b = u8::from_str_radix(s, 16).unwrap(); // parser has already validated
                         r.push(b);
                     }
@@ -384,14 +384,14 @@ impl EvalExt for ParenExpr<'_> {
 
 impl EvalExt for Expr<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        self.ternaryprec.eval()
+        self.ternary_prec.eval()
     }
 }
 
 impl EvalExt for UnaryExpr<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        let arg = self.unaryprec.eval()?;
-        match self.unaryop {
+        let arg = self.unary_prec.eval()?;
+        match self.unary_op {
             UnaryOp::LogicalNot(_) => Ok((arg == 0).into()),
             UnaryOp::BitwiseNot(_) => Ok(!arg),
             // Devicetree has only unsigned arithmetic, so negation is allowed to overflow.
@@ -402,7 +402,7 @@ impl EvalExt for UnaryExpr<'_> {
 
 impl EvalExt for TernaryPrec<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
-        let left = self.logicalorprec.eval()?;
+        let left = self.logical_or_prec.eval()?;
         let [mid, right] = self.expr.as_slice() else {
             return Ok(left);
         };
@@ -435,17 +435,17 @@ macro_rules! impl_binary_eval {
 }
 
 // TODO:  Should these short-circuit?
-impl_binary_eval!(LogicalOrPrec, logicalor, logicalandprec);
-impl_binary_eval!(LogicalAndPrec, logicaland, bitwiseorprec);
+impl_binary_eval!(LogicalOrPrec, logical_or, logical_and_prec);
+impl_binary_eval!(LogicalAndPrec, logical_and, bitwise_or_prec);
 
-impl_binary_eval!(BitwiseOrPrec, bitwiseor, bitwisexorprec);
-impl_binary_eval!(BitwiseXorPrec, bitwisexor, bitwiseandprec);
-impl_binary_eval!(BitwiseAndPrec, bitwiseand, equalprec);
-impl_binary_eval!(EqualPrec, equalprecop, compareprec);
-impl_binary_eval!(ComparePrec, compareprecop, shiftprec);
-impl_binary_eval!(ShiftPrec, shiftprecop, addprec);
-impl_binary_eval!(AddPrec, addprecop, mulprec);
-impl_binary_eval!(MulPrec, mulprecop, unaryprec);
+impl_binary_eval!(BitwiseOrPrec, bitwise_or, bitwise_xor_prec);
+impl_binary_eval!(BitwiseXorPrec, bitwise_xor, bitwise_and_prec);
+impl_binary_eval!(BitwiseAndPrec, bitwise_and, equal_prec);
+impl_binary_eval!(EqualPrec, equal_prec_op, compare_prec);
+impl_binary_eval!(ComparePrec, compare_prec_op, shift_prec);
+impl_binary_eval!(ShiftPrec, shift_prec_op, add_prec);
+impl_binary_eval!(AddPrec, add_prec_op, mul_prec);
+impl_binary_eval!(MulPrec, mul_prec_op, unary_prec);
 
 impl EvalExt for UnaryPrec<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
@@ -725,22 +725,22 @@ fn fill_temp_node<'a, 'b: 'a>(
     path: &NodePath,
     contents: &NodeContents<'b>,
 ) -> Result<(), SourceError> {
-    for childdef in contents.childdef {
-        match childdef {
+    for child_def in contents.child_def {
+        match child_def {
             ChildDef::ChildNode(childnode) => {
-                let name = childnode.nodename.unescape_name();
+                let name = childnode.node_name.unescape_name();
                 let child_path = path.join(name);
                 let child = node.add_child(name);
-                for childnodeprefix in childnode.childnodeprefix {
-                    if let ChildNodePrefix::Label(label) = childnodeprefix {
+                for child_node_prefix in childnode.child_node_prefix {
+                    if let ChildNodePrefix::Label(label) = child_node_prefix {
                         add_label(node_labels, label, &child_path)?;
                     }
                 }
-                let contents = childnode.nodebody.nodecontents;
+                let contents = childnode.node_body.node_contents;
                 fill_temp_node(node_labels, child, &child_path, contents)?;
             }
             ChildDef::DelNode(delnode) => {
-                let name = delnode.nodename.unescape_name();
+                let name = delnode.node_name.unescape_name();
                 node.remove_child(name);
                 let childpath = path.join(name);
                 node_labels.retain(|_, p| !p.starts_with(&childpath));
@@ -748,24 +748,24 @@ fn fill_temp_node<'a, 'b: 'a>(
         }
     }
     let mut names_used = std::collections::HashSet::new();
-    for propdef in contents.propdef {
-        match propdef {
+    for prop_def in contents.prop_def {
+        match prop_def {
             PropDef::Prop(prop) => {
-                let name = prop.propname.unescape_name();
+                let name = prop.prop_name.unescape_name();
                 if !names_used.insert(name) {
                     // dtc rejects this only during the first definition of a node.
                     // However, it seems sensible to reopen nodes at non-top level,
                     // but likely mistaken to redefine a property within a scope.
-                    return Err(prop.propname.err("duplicate property"));
+                    return Err(prop.prop_name.err("duplicate property"));
                 }
-                let value = match prop.propvalue {
+                let value = match prop.prop_value {
                     Some(propvalue) => TempValue::Ast(propvalue),
                     None => TempValue::Bytes(vec![]),
                 };
                 node.set_property(name, value);
             }
             PropDef::DelProp(delprop) => {
-                let name = delprop.propname.unescape_name();
+                let name = delprop.prop_name.unescape_name();
                 names_used.remove(name);
                 node.remove_property(name);
             }

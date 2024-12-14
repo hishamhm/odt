@@ -44,10 +44,10 @@ pub fn parse_with_includes<'a>(loader: &'a Loader, path: &'_ Path) -> Result<Dts
     };
     let dts = parse_typed(src, &loader.arena).map_err(|e| e.with_path(path))?;
     // make an empty container to receive the merged tree
-    let mut topdef = dts.topdef.clone();
-    visit_includes(loader, path, dts, &mut topdef)?;
+    let mut top_def = dts.top_def.clone();
+    visit_includes(loader, path, dts, &mut top_def)?;
     let out = Dts {
-        topdef: loader.arena.alloc(topdef),
+        top_def: loader.arena.alloc(top_def),
         ..*dts
     };
     Ok(out)
@@ -61,7 +61,7 @@ fn visit_includes<'a>(
 ) -> Result<(), SourceError> {
     let dir = Some(path.parent().unwrap());
     for include in dts.include {
-        let pathspan = include.quotedstring.trim_one();
+        let pathspan = include.quoted_string.trim_one();
         // The path is not unescaped in any way before use.
         let Some((ipath, src)) = loader.find_utf8(dir, Path::new(pathspan.as_str())) else {
             return Err(pathspan.err("can't find include file on search path"));
@@ -72,7 +72,7 @@ fn visit_includes<'a>(
     if let Some(memres) = dts.memreserve.first() {
         unimplemented!("{}", memres.err("unimplemented"));
     }
-    out.extend(dts.topdef);
+    out.extend(dts.top_def);
     Ok(())
 }
 

@@ -103,7 +103,7 @@ pub struct Dts<'i> {
     pub header: &'i Vec<'i, &'i Header<'i>>,
     pub include: &'i Vec<'i, &'i Include<'i>>,
     pub memreserve: &'i Vec<'i, &'i Memreserve<'i>>,
-    pub topdef: &'i Vec<'i, &'i TopDef<'i>>,
+    pub top_def: &'i Vec<'i, &'i TopDef<'i>>,
 }
 
 impl<'i> TypedRule<'i> for Dts<'i> {
@@ -117,14 +117,14 @@ impl<'i> TypedRule<'i> for Dts<'i> {
         let mut _tmp_header = Vec::<&'i Header>::new_in(alloc);
         let mut _tmp_include = Vec::<&'i Include>::new_in(alloc);
         let mut _tmp_memreserve = Vec::<&'i Memreserve>::new_in(alloc);
-        let mut _tmp_topdef = Vec::<&'i TopDef>::new_in(alloc);
+        let mut _tmp_top_def = Vec::<&'i TopDef>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
                 Rule::Header => _tmp_header.push(Header::build(child, alloc)),
                 Rule::Include => _tmp_include.push(Include::build(child, alloc)),
                 Rule::Memreserve => _tmp_memreserve.push(Memreserve::build(child, alloc)),
-                Rule::TopDef => _tmp_topdef.push(TopDef::build(child, alloc)),
+                Rule::TopDef => _tmp_top_def.push(TopDef::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -136,7 +136,7 @@ impl<'i> TypedRule<'i> for Dts<'i> {
             header: alloc.alloc(_tmp_header),
             include: alloc.alloc(_tmp_include),
             memreserve: alloc.alloc(_tmp_memreserve),
-            topdef: alloc.alloc(_tmp_topdef),
+            top_def: alloc.alloc(_tmp_top_def),
         })
     }
 }
@@ -332,7 +332,7 @@ impl<'i> TypedRule<'i> for Header<'i> {
 #[derive(Debug)]
 pub struct Version<'i> {
     pub _span: Span<'i>,
-    pub slashdtsv1: &'i SlashDtsV1<'i>,
+    pub slash_dts_v1: &'i SlashDtsV1<'i>,
     pub semicolon: &'i Semicolon<'i>,
 }
 
@@ -344,12 +344,12 @@ impl<'i> TypedRule<'i> for Version<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_slashdtsv1 = Vec::<&'i SlashDtsV1>::new_in(alloc);
+        let mut _tmp_slash_dts_v1 = Vec::<&'i SlashDtsV1>::new_in(alloc);
         let mut _tmp_semicolon = Vec::<&'i Semicolon>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::SlashDtsV1 => _tmp_slashdtsv1.push(SlashDtsV1::build(child, alloc)),
+                Rule::SlashDtsV1 => _tmp_slash_dts_v1.push(SlashDtsV1::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
@@ -359,7 +359,7 @@ impl<'i> TypedRule<'i> for Version<'i> {
         }
         alloc.alloc(Self {
             _span,
-            slashdtsv1: to_singleton(_tmp_slashdtsv1),
+            slash_dts_v1: to_singleton(_tmp_slash_dts_v1),
             semicolon: to_singleton(_tmp_semicolon),
         })
     }
@@ -369,7 +369,7 @@ impl<'i> TypedRule<'i> for Version<'i> {
 #[derive(Debug)]
 pub struct Plugin<'i> {
     pub _span: Span<'i>,
-    pub slashplugin: &'i SlashPlugin<'i>,
+    pub slash_plugin: &'i SlashPlugin<'i>,
     pub semicolon: &'i Semicolon<'i>,
 }
 
@@ -381,12 +381,12 @@ impl<'i> TypedRule<'i> for Plugin<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_slashplugin = Vec::<&'i SlashPlugin>::new_in(alloc);
+        let mut _tmp_slash_plugin = Vec::<&'i SlashPlugin>::new_in(alloc);
         let mut _tmp_semicolon = Vec::<&'i Semicolon>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::SlashPlugin => _tmp_slashplugin.push(SlashPlugin::build(child, alloc)),
+                Rule::SlashPlugin => _tmp_slash_plugin.push(SlashPlugin::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
@@ -396,7 +396,7 @@ impl<'i> TypedRule<'i> for Plugin<'i> {
         }
         alloc.alloc(Self {
             _span,
-            slashplugin: to_singleton(_tmp_slashplugin),
+            slash_plugin: to_singleton(_tmp_slash_plugin),
             semicolon: to_singleton(_tmp_semicolon),
         })
     }
@@ -406,9 +406,9 @@ impl<'i> TypedRule<'i> for Plugin<'i> {
 #[derive(Debug)]
 pub struct Include<'i> {
     pub _span: Span<'i>,
-    pub slashinclude: &'i SlashInclude<'i>,
-    pub includewhitespace: &'i IncludeWhitespace<'i>,
-    pub quotedstring: &'i QuotedString<'i>,
+    pub slash_include: &'i SlashInclude<'i>,
+    pub include_whitespace: &'i IncludeWhitespace<'i>,
+    pub quoted_string: &'i QuotedString<'i>,
 }
 
 impl<'i> TypedRule<'i> for Include<'i> {
@@ -419,15 +419,15 @@ impl<'i> TypedRule<'i> for Include<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_slashinclude = Vec::<&'i SlashInclude>::new_in(alloc);
-        let mut _tmp_includewhitespace = Vec::<&'i IncludeWhitespace>::new_in(alloc);
-        let mut _tmp_quotedstring = Vec::<&'i QuotedString>::new_in(alloc);
+        let mut _tmp_slash_include = Vec::<&'i SlashInclude>::new_in(alloc);
+        let mut _tmp_include_whitespace = Vec::<&'i IncludeWhitespace>::new_in(alloc);
+        let mut _tmp_quoted_string = Vec::<&'i QuotedString>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::SlashInclude => _tmp_slashinclude.push(SlashInclude::build(child, alloc)),
-                Rule::IncludeWhitespace => _tmp_includewhitespace.push(IncludeWhitespace::build(child, alloc)),
-                Rule::QuotedString => _tmp_quotedstring.push(QuotedString::build(child, alloc)),
+                Rule::SlashInclude => _tmp_slash_include.push(SlashInclude::build(child, alloc)),
+                Rule::IncludeWhitespace => _tmp_include_whitespace.push(IncludeWhitespace::build(child, alloc)),
+                Rule::QuotedString => _tmp_quoted_string.push(QuotedString::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -436,9 +436,9 @@ impl<'i> TypedRule<'i> for Include<'i> {
         }
         alloc.alloc(Self {
             _span,
-            slashinclude: to_singleton(_tmp_slashinclude),
-            includewhitespace: to_singleton(_tmp_includewhitespace),
-            quotedstring: to_singleton(_tmp_quotedstring),
+            slash_include: to_singleton(_tmp_slash_include),
+            include_whitespace: to_singleton(_tmp_include_whitespace),
+            quoted_string: to_singleton(_tmp_quoted_string),
         })
     }
 }
@@ -463,8 +463,8 @@ impl<'i> TypedRule<'i> for IncludeWhitespace<'i> {
 pub struct Memreserve<'i> {
     pub _span: Span<'i>,
     pub label: &'i Vec<'i, &'i Label<'i>>,
-    pub slashmemreserve: &'i SlashMemreserve<'i>,
-    pub memreservearg: &'i Vec<'i, &'i MemreserveArg<'i>>,
+    pub slash_memreserve: &'i SlashMemreserve<'i>,
+    pub memreserve_arg: &'i Vec<'i, &'i MemreserveArg<'i>>,
     pub semicolon: &'i Semicolon<'i>,
 }
 
@@ -477,15 +477,15 @@ impl<'i> TypedRule<'i> for Memreserve<'i> {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
         let mut _tmp_label = Vec::<&'i Label>::new_in(alloc);
-        let mut _tmp_slashmemreserve = Vec::<&'i SlashMemreserve>::new_in(alloc);
-        let mut _tmp_memreservearg = Vec::<&'i MemreserveArg>::new_in(alloc);
+        let mut _tmp_slash_memreserve = Vec::<&'i SlashMemreserve>::new_in(alloc);
+        let mut _tmp_memreserve_arg = Vec::<&'i MemreserveArg>::new_in(alloc);
         let mut _tmp_semicolon = Vec::<&'i Semicolon>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
                 Rule::Label => _tmp_label.push(Label::build(child, alloc)),
-                Rule::SlashMemreserve => _tmp_slashmemreserve.push(SlashMemreserve::build(child, alloc)),
-                Rule::MemreserveArg => _tmp_memreservearg.push(MemreserveArg::build(child, alloc)),
+                Rule::SlashMemreserve => _tmp_slash_memreserve.push(SlashMemreserve::build(child, alloc)),
+                Rule::MemreserveArg => _tmp_memreserve_arg.push(MemreserveArg::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
@@ -496,8 +496,8 @@ impl<'i> TypedRule<'i> for Memreserve<'i> {
         alloc.alloc(Self {
             _span,
             label: alloc.alloc(_tmp_label),
-            slashmemreserve: to_singleton(_tmp_slashmemreserve),
-            memreservearg: alloc.alloc(_tmp_memreservearg),
+            slash_memreserve: to_singleton(_tmp_slash_memreserve),
+            memreserve_arg: alloc.alloc(_tmp_memreserve_arg),
             semicolon: to_singleton(_tmp_semicolon),
         })
     }
@@ -562,8 +562,8 @@ impl<'i> TypedRule<'i> for TopDef<'i> {
 #[derive(Debug)]
 pub struct TopDelNode<'i> {
     pub _span: Span<'i>,
-    pub slashdeletenode: &'i SlashDeleteNode<'i>,
-    pub nodereference: &'i NodeReference<'i>,
+    pub slash_delete_node: &'i SlashDeleteNode<'i>,
+    pub node_reference: &'i NodeReference<'i>,
     pub semicolon: &'i Semicolon<'i>,
 }
 
@@ -575,14 +575,14 @@ impl<'i> TypedRule<'i> for TopDelNode<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_slashdeletenode = Vec::<&'i SlashDeleteNode>::new_in(alloc);
-        let mut _tmp_nodereference = Vec::<&'i NodeReference>::new_in(alloc);
+        let mut _tmp_slash_delete_node = Vec::<&'i SlashDeleteNode>::new_in(alloc);
+        let mut _tmp_node_reference = Vec::<&'i NodeReference>::new_in(alloc);
         let mut _tmp_semicolon = Vec::<&'i Semicolon>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::SlashDeleteNode => _tmp_slashdeletenode.push(SlashDeleteNode::build(child, alloc)),
-                Rule::NodeReference => _tmp_nodereference.push(NodeReference::build(child, alloc)),
+                Rule::SlashDeleteNode => _tmp_slash_delete_node.push(SlashDeleteNode::build(child, alloc)),
+                Rule::NodeReference => _tmp_node_reference.push(NodeReference::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
@@ -592,8 +592,8 @@ impl<'i> TypedRule<'i> for TopDelNode<'i> {
         }
         alloc.alloc(Self {
             _span,
-            slashdeletenode: to_singleton(_tmp_slashdeletenode),
-            nodereference: to_singleton(_tmp_nodereference),
+            slash_delete_node: to_singleton(_tmp_slash_delete_node),
+            node_reference: to_singleton(_tmp_node_reference),
             semicolon: to_singleton(_tmp_semicolon),
         })
     }
@@ -603,8 +603,8 @@ impl<'i> TypedRule<'i> for TopDelNode<'i> {
 #[derive(Debug)]
 pub struct TopOmitNode<'i> {
     pub _span: Span<'i>,
-    pub slashomitifnoref: &'i SlashOmitIfNoRef<'i>,
-    pub nodereference: &'i NodeReference<'i>,
+    pub slash_omit_if_no_ref: &'i SlashOmitIfNoRef<'i>,
+    pub node_reference: &'i NodeReference<'i>,
     pub semicolon: &'i Semicolon<'i>,
 }
 
@@ -616,14 +616,14 @@ impl<'i> TypedRule<'i> for TopOmitNode<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_slashomitifnoref = Vec::<&'i SlashOmitIfNoRef>::new_in(alloc);
-        let mut _tmp_nodereference = Vec::<&'i NodeReference>::new_in(alloc);
+        let mut _tmp_slash_omit_if_no_ref = Vec::<&'i SlashOmitIfNoRef>::new_in(alloc);
+        let mut _tmp_node_reference = Vec::<&'i NodeReference>::new_in(alloc);
         let mut _tmp_semicolon = Vec::<&'i Semicolon>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::SlashOmitIfNoRef => _tmp_slashomitifnoref.push(SlashOmitIfNoRef::build(child, alloc)),
-                Rule::NodeReference => _tmp_nodereference.push(NodeReference::build(child, alloc)),
+                Rule::SlashOmitIfNoRef => _tmp_slash_omit_if_no_ref.push(SlashOmitIfNoRef::build(child, alloc)),
+                Rule::NodeReference => _tmp_node_reference.push(NodeReference::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
@@ -633,8 +633,8 @@ impl<'i> TypedRule<'i> for TopOmitNode<'i> {
         }
         alloc.alloc(Self {
             _span,
-            slashomitifnoref: to_singleton(_tmp_slashomitifnoref),
-            nodereference: to_singleton(_tmp_nodereference),
+            slash_omit_if_no_ref: to_singleton(_tmp_slash_omit_if_no_ref),
+            node_reference: to_singleton(_tmp_node_reference),
             semicolon: to_singleton(_tmp_semicolon),
         })
     }
@@ -645,8 +645,8 @@ impl<'i> TypedRule<'i> for TopOmitNode<'i> {
 pub struct TopNode<'i> {
     pub _span: Span<'i>,
     pub label: &'i Vec<'i, &'i Label<'i>>,
-    pub topnodename: &'i TopNodeName<'i>,
-    pub nodebody: &'i NodeBody<'i>,
+    pub top_node_name: &'i TopNodeName<'i>,
+    pub node_body: &'i NodeBody<'i>,
 }
 
 impl<'i> TypedRule<'i> for TopNode<'i> {
@@ -658,14 +658,14 @@ impl<'i> TypedRule<'i> for TopNode<'i> {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
         let mut _tmp_label = Vec::<&'i Label>::new_in(alloc);
-        let mut _tmp_topnodename = Vec::<&'i TopNodeName>::new_in(alloc);
-        let mut _tmp_nodebody = Vec::<&'i NodeBody>::new_in(alloc);
+        let mut _tmp_top_node_name = Vec::<&'i TopNodeName>::new_in(alloc);
+        let mut _tmp_node_body = Vec::<&'i NodeBody>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
                 Rule::Label => _tmp_label.push(Label::build(child, alloc)),
-                Rule::TopNodeName => _tmp_topnodename.push(TopNodeName::build(child, alloc)),
-                Rule::NodeBody => _tmp_nodebody.push(NodeBody::build(child, alloc)),
+                Rule::TopNodeName => _tmp_top_node_name.push(TopNodeName::build(child, alloc)),
+                Rule::NodeBody => _tmp_node_body.push(NodeBody::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -675,8 +675,8 @@ impl<'i> TypedRule<'i> for TopNode<'i> {
         alloc.alloc(Self {
             _span,
             label: alloc.alloc(_tmp_label),
-            topnodename: to_singleton(_tmp_topnodename),
-            nodebody: to_singleton(_tmp_nodebody),
+            top_node_name: to_singleton(_tmp_top_node_name),
+            node_body: to_singleton(_tmp_node_body),
         })
     }
 }
@@ -792,10 +792,10 @@ impl<'i> TypedRule<'i> for NodePath<'i> {
 #[derive(Debug)]
 pub struct NodeBody<'i> {
     pub _span: Span<'i>,
-    pub opennode: &'i OpenNode<'i>,
-    pub nodecontents: &'i NodeContents<'i>,
-    pub closenode: &'i CloseNode<'i>,
-    pub endnode: &'i EndNode<'i>,
+    pub open_node: &'i OpenNode<'i>,
+    pub node_contents: &'i NodeContents<'i>,
+    pub close_node: &'i CloseNode<'i>,
+    pub end_node: &'i EndNode<'i>,
 }
 
 impl<'i> TypedRule<'i> for NodeBody<'i> {
@@ -806,17 +806,17 @@ impl<'i> TypedRule<'i> for NodeBody<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_opennode = Vec::<&'i OpenNode>::new_in(alloc);
-        let mut _tmp_nodecontents = Vec::<&'i NodeContents>::new_in(alloc);
-        let mut _tmp_closenode = Vec::<&'i CloseNode>::new_in(alloc);
-        let mut _tmp_endnode = Vec::<&'i EndNode>::new_in(alloc);
+        let mut _tmp_open_node = Vec::<&'i OpenNode>::new_in(alloc);
+        let mut _tmp_node_contents = Vec::<&'i NodeContents>::new_in(alloc);
+        let mut _tmp_close_node = Vec::<&'i CloseNode>::new_in(alloc);
+        let mut _tmp_end_node = Vec::<&'i EndNode>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::OpenNode => _tmp_opennode.push(OpenNode::build(child, alloc)),
-                Rule::NodeContents => _tmp_nodecontents.push(NodeContents::build(child, alloc)),
-                Rule::CloseNode => _tmp_closenode.push(CloseNode::build(child, alloc)),
-                Rule::EndNode => _tmp_endnode.push(EndNode::build(child, alloc)),
+                Rule::OpenNode => _tmp_open_node.push(OpenNode::build(child, alloc)),
+                Rule::NodeContents => _tmp_node_contents.push(NodeContents::build(child, alloc)),
+                Rule::CloseNode => _tmp_close_node.push(CloseNode::build(child, alloc)),
+                Rule::EndNode => _tmp_end_node.push(EndNode::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -825,10 +825,10 @@ impl<'i> TypedRule<'i> for NodeBody<'i> {
         }
         alloc.alloc(Self {
             _span,
-            opennode: to_singleton(_tmp_opennode),
-            nodecontents: to_singleton(_tmp_nodecontents),
-            closenode: to_singleton(_tmp_closenode),
-            endnode: to_singleton(_tmp_endnode),
+            open_node: to_singleton(_tmp_open_node),
+            node_contents: to_singleton(_tmp_node_contents),
+            close_node: to_singleton(_tmp_close_node),
+            end_node: to_singleton(_tmp_end_node),
         })
     }
 }
@@ -900,8 +900,8 @@ impl<'i> TypedRule<'i> for EndNode<'i> {
 #[derive(Debug)]
 pub struct NodeContents<'i> {
     pub _span: Span<'i>,
-    pub propdef: &'i Vec<'i, &'i PropDef<'i>>,
-    pub childdef: &'i Vec<'i, &'i ChildDef<'i>>,
+    pub prop_def: &'i Vec<'i, &'i PropDef<'i>>,
+    pub child_def: &'i Vec<'i, &'i ChildDef<'i>>,
 }
 
 impl<'i> TypedRule<'i> for NodeContents<'i> {
@@ -912,13 +912,13 @@ impl<'i> TypedRule<'i> for NodeContents<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_propdef = Vec::<&'i PropDef>::new_in(alloc);
-        let mut _tmp_childdef = Vec::<&'i ChildDef>::new_in(alloc);
+        let mut _tmp_prop_def = Vec::<&'i PropDef>::new_in(alloc);
+        let mut _tmp_child_def = Vec::<&'i ChildDef>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::PropDef => _tmp_propdef.push(PropDef::build(child, alloc)),
-                Rule::ChildDef => _tmp_childdef.push(ChildDef::build(child, alloc)),
+                Rule::PropDef => _tmp_prop_def.push(PropDef::build(child, alloc)),
+                Rule::ChildDef => _tmp_child_def.push(ChildDef::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -927,8 +927,8 @@ impl<'i> TypedRule<'i> for NodeContents<'i> {
         }
         alloc.alloc(Self {
             _span,
-            propdef: alloc.alloc(_tmp_propdef),
-            childdef: alloc.alloc(_tmp_childdef),
+            prop_def: alloc.alloc(_tmp_prop_def),
+            child_def: alloc.alloc(_tmp_child_def),
         })
     }
 }
@@ -989,9 +989,9 @@ impl<'i> TypedRule<'i> for ChildDef<'i> {
 #[derive(Debug)]
 pub struct DelNode<'i> {
     pub _span: Span<'i>,
-    pub delnodesuperfluousprefix: &'i Vec<'i, &'i DelNodeSuperfluousPrefix<'i>>,
-    pub slashdeletenode: &'i SlashDeleteNode<'i>,
-    pub nodename: &'i NodeName<'i>,
+    pub del_node_superfluous_prefix: &'i Vec<'i, &'i DelNodeSuperfluousPrefix<'i>>,
+    pub slash_delete_node: &'i SlashDeleteNode<'i>,
+    pub node_name: &'i NodeName<'i>,
     pub semicolon: &'i Semicolon<'i>,
 }
 
@@ -1003,16 +1003,16 @@ impl<'i> TypedRule<'i> for DelNode<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_delnodesuperfluousprefix = Vec::<&'i DelNodeSuperfluousPrefix>::new_in(alloc);
-        let mut _tmp_slashdeletenode = Vec::<&'i SlashDeleteNode>::new_in(alloc);
-        let mut _tmp_nodename = Vec::<&'i NodeName>::new_in(alloc);
+        let mut _tmp_del_node_superfluous_prefix = Vec::<&'i DelNodeSuperfluousPrefix>::new_in(alloc);
+        let mut _tmp_slash_delete_node = Vec::<&'i SlashDeleteNode>::new_in(alloc);
+        let mut _tmp_node_name = Vec::<&'i NodeName>::new_in(alloc);
         let mut _tmp_semicolon = Vec::<&'i Semicolon>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::DelNodeSuperfluousPrefix => _tmp_delnodesuperfluousprefix.push(DelNodeSuperfluousPrefix::build(child, alloc)),
-                Rule::SlashDeleteNode => _tmp_slashdeletenode.push(SlashDeleteNode::build(child, alloc)),
-                Rule::NodeName => _tmp_nodename.push(NodeName::build(child, alloc)),
+                Rule::DelNodeSuperfluousPrefix => _tmp_del_node_superfluous_prefix.push(DelNodeSuperfluousPrefix::build(child, alloc)),
+                Rule::SlashDeleteNode => _tmp_slash_delete_node.push(SlashDeleteNode::build(child, alloc)),
+                Rule::NodeName => _tmp_node_name.push(NodeName::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
@@ -1022,9 +1022,9 @@ impl<'i> TypedRule<'i> for DelNode<'i> {
         }
         alloc.alloc(Self {
             _span,
-            delnodesuperfluousprefix: alloc.alloc(_tmp_delnodesuperfluousprefix),
-            slashdeletenode: to_singleton(_tmp_slashdeletenode),
-            nodename: to_singleton(_tmp_nodename),
+            del_node_superfluous_prefix: alloc.alloc(_tmp_del_node_superfluous_prefix),
+            slash_delete_node: to_singleton(_tmp_slash_delete_node),
+            node_name: to_singleton(_tmp_node_name),
             semicolon: to_singleton(_tmp_semicolon),
         })
     }
@@ -1060,9 +1060,9 @@ impl<'i> TypedRule<'i> for DelNodeSuperfluousPrefix<'i> {
 #[derive(Debug)]
 pub struct DelProp<'i> {
     pub _span: Span<'i>,
-    pub delpropsuperfluousprefix: &'i Vec<'i, &'i DelPropSuperfluousPrefix<'i>>,
-    pub slashdeleteproperty: &'i SlashDeleteProperty<'i>,
-    pub propname: &'i PropName<'i>,
+    pub del_prop_superfluous_prefix: &'i Vec<'i, &'i DelPropSuperfluousPrefix<'i>>,
+    pub slash_delete_property: &'i SlashDeleteProperty<'i>,
+    pub prop_name: &'i PropName<'i>,
     pub semicolon: &'i Semicolon<'i>,
 }
 
@@ -1074,16 +1074,16 @@ impl<'i> TypedRule<'i> for DelProp<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_delpropsuperfluousprefix = Vec::<&'i DelPropSuperfluousPrefix>::new_in(alloc);
-        let mut _tmp_slashdeleteproperty = Vec::<&'i SlashDeleteProperty>::new_in(alloc);
-        let mut _tmp_propname = Vec::<&'i PropName>::new_in(alloc);
+        let mut _tmp_del_prop_superfluous_prefix = Vec::<&'i DelPropSuperfluousPrefix>::new_in(alloc);
+        let mut _tmp_slash_delete_property = Vec::<&'i SlashDeleteProperty>::new_in(alloc);
+        let mut _tmp_prop_name = Vec::<&'i PropName>::new_in(alloc);
         let mut _tmp_semicolon = Vec::<&'i Semicolon>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::DelPropSuperfluousPrefix => _tmp_delpropsuperfluousprefix.push(DelPropSuperfluousPrefix::build(child, alloc)),
-                Rule::SlashDeleteProperty => _tmp_slashdeleteproperty.push(SlashDeleteProperty::build(child, alloc)),
-                Rule::PropName => _tmp_propname.push(PropName::build(child, alloc)),
+                Rule::DelPropSuperfluousPrefix => _tmp_del_prop_superfluous_prefix.push(DelPropSuperfluousPrefix::build(child, alloc)),
+                Rule::SlashDeleteProperty => _tmp_slash_delete_property.push(SlashDeleteProperty::build(child, alloc)),
+                Rule::PropName => _tmp_prop_name.push(PropName::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
@@ -1093,9 +1093,9 @@ impl<'i> TypedRule<'i> for DelProp<'i> {
         }
         alloc.alloc(Self {
             _span,
-            delpropsuperfluousprefix: alloc.alloc(_tmp_delpropsuperfluousprefix),
-            slashdeleteproperty: to_singleton(_tmp_slashdeleteproperty),
-            propname: to_singleton(_tmp_propname),
+            del_prop_superfluous_prefix: alloc.alloc(_tmp_del_prop_superfluous_prefix),
+            slash_delete_property: to_singleton(_tmp_slash_delete_property),
+            prop_name: to_singleton(_tmp_prop_name),
             semicolon: to_singleton(_tmp_semicolon),
         })
     }
@@ -1138,9 +1138,9 @@ impl<'i> TypedRule<'i> for DelPropSuperfluousPrefix<'i> {
 #[derive(Debug)]
 pub struct ChildNode<'i> {
     pub _span: Span<'i>,
-    pub childnodeprefix: &'i Vec<'i, &'i ChildNodePrefix<'i>>,
-    pub nodename: &'i NodeName<'i>,
-    pub nodebody: &'i NodeBody<'i>,
+    pub child_node_prefix: &'i Vec<'i, &'i ChildNodePrefix<'i>>,
+    pub node_name: &'i NodeName<'i>,
+    pub node_body: &'i NodeBody<'i>,
 }
 
 impl<'i> TypedRule<'i> for ChildNode<'i> {
@@ -1151,15 +1151,15 @@ impl<'i> TypedRule<'i> for ChildNode<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_childnodeprefix = Vec::<&'i ChildNodePrefix>::new_in(alloc);
-        let mut _tmp_nodename = Vec::<&'i NodeName>::new_in(alloc);
-        let mut _tmp_nodebody = Vec::<&'i NodeBody>::new_in(alloc);
+        let mut _tmp_child_node_prefix = Vec::<&'i ChildNodePrefix>::new_in(alloc);
+        let mut _tmp_node_name = Vec::<&'i NodeName>::new_in(alloc);
+        let mut _tmp_node_body = Vec::<&'i NodeBody>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::ChildNodePrefix => _tmp_childnodeprefix.push(ChildNodePrefix::build(child, alloc)),
-                Rule::NodeName => _tmp_nodename.push(NodeName::build(child, alloc)),
-                Rule::NodeBody => _tmp_nodebody.push(NodeBody::build(child, alloc)),
+                Rule::ChildNodePrefix => _tmp_child_node_prefix.push(ChildNodePrefix::build(child, alloc)),
+                Rule::NodeName => _tmp_node_name.push(NodeName::build(child, alloc)),
+                Rule::NodeBody => _tmp_node_body.push(NodeBody::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1168,9 +1168,9 @@ impl<'i> TypedRule<'i> for ChildNode<'i> {
         }
         alloc.alloc(Self {
             _span,
-            childnodeprefix: alloc.alloc(_tmp_childnodeprefix),
-            nodename: to_singleton(_tmp_nodename),
-            nodebody: to_singleton(_tmp_nodebody),
+            child_node_prefix: alloc.alloc(_tmp_child_node_prefix),
+            node_name: to_singleton(_tmp_node_name),
+            node_body: to_singleton(_tmp_node_body),
         })
     }
 }
@@ -1223,9 +1223,9 @@ impl<'i> TypedRule<'i> for NodeName<'i> {
 pub struct Prop<'i> {
     pub _span: Span<'i>,
     pub label: &'i Vec<'i, &'i Label<'i>>,
-    pub propname: &'i PropName<'i>,
-    pub propassign: Option<&'i PropAssign<'i>>,
-    pub propvalue: Option<&'i PropValue<'i>>,
+    pub prop_name: &'i PropName<'i>,
+    pub prop_assign: Option<&'i PropAssign<'i>>,
+    pub prop_value: Option<&'i PropValue<'i>>,
     pub semicolon: &'i Semicolon<'i>,
 }
 
@@ -1238,17 +1238,17 @@ impl<'i> TypedRule<'i> for Prop<'i> {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
         let mut _tmp_label = Vec::<&'i Label>::new_in(alloc);
-        let mut _tmp_propname = Vec::<&'i PropName>::new_in(alloc);
-        let mut _tmp_propassign = Vec::<&'i PropAssign>::new_in(alloc);
-        let mut _tmp_propvalue = Vec::<&'i PropValue>::new_in(alloc);
+        let mut _tmp_prop_name = Vec::<&'i PropName>::new_in(alloc);
+        let mut _tmp_prop_assign = Vec::<&'i PropAssign>::new_in(alloc);
+        let mut _tmp_prop_value = Vec::<&'i PropValue>::new_in(alloc);
         let mut _tmp_semicolon = Vec::<&'i Semicolon>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
                 Rule::Label => _tmp_label.push(Label::build(child, alloc)),
-                Rule::PropName => _tmp_propname.push(PropName::build(child, alloc)),
-                Rule::PropAssign => _tmp_propassign.push(PropAssign::build(child, alloc)),
-                Rule::PropValue => _tmp_propvalue.push(PropValue::build(child, alloc)),
+                Rule::PropName => _tmp_prop_name.push(PropName::build(child, alloc)),
+                Rule::PropAssign => _tmp_prop_assign.push(PropAssign::build(child, alloc)),
+                Rule::PropValue => _tmp_prop_value.push(PropValue::build(child, alloc)),
                 Rule::Semicolon => _tmp_semicolon.push(Semicolon::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
@@ -1259,9 +1259,9 @@ impl<'i> TypedRule<'i> for Prop<'i> {
         alloc.alloc(Self {
             _span,
             label: alloc.alloc(_tmp_label),
-            propname: to_singleton(_tmp_propname),
-            propassign: to_option(_tmp_propassign),
-            propvalue: to_option(_tmp_propvalue),
+            prop_name: to_singleton(_tmp_prop_name),
+            prop_assign: to_option(_tmp_prop_assign),
+            prop_value: to_option(_tmp_prop_value),
             semicolon: to_singleton(_tmp_semicolon),
         })
     }
@@ -1303,7 +1303,7 @@ impl<'i> TypedRule<'i> for PropName<'i> {
 #[derive(Debug)]
 pub struct PropValue<'i> {
     pub _span: Span<'i>,
-    pub labeledvalue: &'i Vec<'i, &'i LabeledValue<'i>>,
+    pub labeled_value: &'i Vec<'i, &'i LabeledValue<'i>>,
     pub comma: &'i Vec<'i, &'i Comma<'i>>,
 }
 
@@ -1315,12 +1315,12 @@ impl<'i> TypedRule<'i> for PropValue<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_labeledvalue = Vec::<&'i LabeledValue>::new_in(alloc);
+        let mut _tmp_labeled_value = Vec::<&'i LabeledValue>::new_in(alloc);
         let mut _tmp_comma = Vec::<&'i Comma>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::LabeledValue => _tmp_labeledvalue.push(LabeledValue::build(child, alloc)),
+                Rule::LabeledValue => _tmp_labeled_value.push(LabeledValue::build(child, alloc)),
                 Rule::Comma => _tmp_comma.push(Comma::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
@@ -1330,7 +1330,7 @@ impl<'i> TypedRule<'i> for PropValue<'i> {
         }
         alloc.alloc(Self {
             _span,
-            labeledvalue: alloc.alloc(_tmp_labeledvalue),
+            labeled_value: alloc.alloc(_tmp_labeled_value),
             comma: alloc.alloc(_tmp_comma),
         })
     }
@@ -1428,9 +1428,9 @@ impl<'i> TypedRule<'i> for Value<'i> {
 pub struct Cells<'i> {
     pub _span: Span<'i>,
     pub bits: Option<&'i Bits<'i>>,
-    pub opencells: &'i OpenCells<'i>,
-    pub labelorcell: &'i Vec<'i, &'i LabelOrCell<'i>>,
-    pub closecells: &'i CloseCells<'i>,
+    pub open_cells: &'i OpenCells<'i>,
+    pub label_or_cell: &'i Vec<'i, &'i LabelOrCell<'i>>,
+    pub close_cells: &'i CloseCells<'i>,
 }
 
 impl<'i> TypedRule<'i> for Cells<'i> {
@@ -1442,16 +1442,16 @@ impl<'i> TypedRule<'i> for Cells<'i> {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
         let mut _tmp_bits = Vec::<&'i Bits>::new_in(alloc);
-        let mut _tmp_opencells = Vec::<&'i OpenCells>::new_in(alloc);
-        let mut _tmp_labelorcell = Vec::<&'i LabelOrCell>::new_in(alloc);
-        let mut _tmp_closecells = Vec::<&'i CloseCells>::new_in(alloc);
+        let mut _tmp_open_cells = Vec::<&'i OpenCells>::new_in(alloc);
+        let mut _tmp_label_or_cell = Vec::<&'i LabelOrCell>::new_in(alloc);
+        let mut _tmp_close_cells = Vec::<&'i CloseCells>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
                 Rule::Bits => _tmp_bits.push(Bits::build(child, alloc)),
-                Rule::OpenCells => _tmp_opencells.push(OpenCells::build(child, alloc)),
-                Rule::LabelOrCell => _tmp_labelorcell.push(LabelOrCell::build(child, alloc)),
-                Rule::CloseCells => _tmp_closecells.push(CloseCells::build(child, alloc)),
+                Rule::OpenCells => _tmp_open_cells.push(OpenCells::build(child, alloc)),
+                Rule::LabelOrCell => _tmp_label_or_cell.push(LabelOrCell::build(child, alloc)),
+                Rule::CloseCells => _tmp_close_cells.push(CloseCells::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1461,9 +1461,9 @@ impl<'i> TypedRule<'i> for Cells<'i> {
         alloc.alloc(Self {
             _span,
             bits: to_option(_tmp_bits),
-            opencells: to_singleton(_tmp_opencells),
-            labelorcell: alloc.alloc(_tmp_labelorcell),
-            closecells: to_singleton(_tmp_closecells),
+            open_cells: to_singleton(_tmp_open_cells),
+            label_or_cell: alloc.alloc(_tmp_label_or_cell),
+            close_cells: to_singleton(_tmp_close_cells),
         })
     }
 }
@@ -1472,8 +1472,8 @@ impl<'i> TypedRule<'i> for Cells<'i> {
 #[derive(Debug)]
 pub struct Bits<'i> {
     pub _span: Span<'i>,
-    pub slashbits: &'i SlashBits<'i>,
-    pub numericliteral: &'i NumericLiteral<'i>,
+    pub slash_bits: &'i SlashBits<'i>,
+    pub numeric_literal: &'i NumericLiteral<'i>,
 }
 
 impl<'i> TypedRule<'i> for Bits<'i> {
@@ -1484,13 +1484,13 @@ impl<'i> TypedRule<'i> for Bits<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_slashbits = Vec::<&'i SlashBits>::new_in(alloc);
-        let mut _tmp_numericliteral = Vec::<&'i NumericLiteral>::new_in(alloc);
+        let mut _tmp_slash_bits = Vec::<&'i SlashBits>::new_in(alloc);
+        let mut _tmp_numeric_literal = Vec::<&'i NumericLiteral>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::SlashBits => _tmp_slashbits.push(SlashBits::build(child, alloc)),
-                Rule::NumericLiteral => _tmp_numericliteral.push(NumericLiteral::build(child, alloc)),
+                Rule::SlashBits => _tmp_slash_bits.push(SlashBits::build(child, alloc)),
+                Rule::NumericLiteral => _tmp_numeric_literal.push(NumericLiteral::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1499,8 +1499,8 @@ impl<'i> TypedRule<'i> for Bits<'i> {
         }
         alloc.alloc(Self {
             _span,
-            slashbits: to_singleton(_tmp_slashbits),
-            numericliteral: to_singleton(_tmp_numericliteral),
+            slash_bits: to_singleton(_tmp_slash_bits),
+            numeric_literal: to_singleton(_tmp_numeric_literal),
         })
     }
 }
@@ -1594,9 +1594,9 @@ impl<'i> TypedRule<'i> for Cell<'i> {
 #[derive(Debug)]
 pub struct ParenExpr<'i> {
     pub _span: Span<'i>,
-    pub openparen: &'i OpenParen<'i>,
+    pub open_paren: &'i OpenParen<'i>,
     pub expr: &'i Expr<'i>,
-    pub closeparen: &'i CloseParen<'i>,
+    pub close_paren: &'i CloseParen<'i>,
 }
 
 impl<'i> TypedRule<'i> for ParenExpr<'i> {
@@ -1607,15 +1607,15 @@ impl<'i> TypedRule<'i> for ParenExpr<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_openparen = Vec::<&'i OpenParen>::new_in(alloc);
+        let mut _tmp_open_paren = Vec::<&'i OpenParen>::new_in(alloc);
         let mut _tmp_expr = Vec::<&'i Expr>::new_in(alloc);
-        let mut _tmp_closeparen = Vec::<&'i CloseParen>::new_in(alloc);
+        let mut _tmp_close_paren = Vec::<&'i CloseParen>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::OpenParen => _tmp_openparen.push(OpenParen::build(child, alloc)),
+                Rule::OpenParen => _tmp_open_paren.push(OpenParen::build(child, alloc)),
                 Rule::Expr => _tmp_expr.push(Expr::build(child, alloc)),
-                Rule::CloseParen => _tmp_closeparen.push(CloseParen::build(child, alloc)),
+                Rule::CloseParen => _tmp_close_paren.push(CloseParen::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1624,9 +1624,9 @@ impl<'i> TypedRule<'i> for ParenExpr<'i> {
         }
         alloc.alloc(Self {
             _span,
-            openparen: to_singleton(_tmp_openparen),
+            open_paren: to_singleton(_tmp_open_paren),
             expr: to_singleton(_tmp_expr),
-            closeparen: to_singleton(_tmp_closeparen),
+            close_paren: to_singleton(_tmp_close_paren),
         })
     }
 }
@@ -1635,7 +1635,7 @@ impl<'i> TypedRule<'i> for ParenExpr<'i> {
 #[derive(Debug)]
 pub struct Expr<'i> {
     pub _span: Span<'i>,
-    pub ternaryprec: &'i TernaryPrec<'i>,
+    pub ternary_prec: &'i TernaryPrec<'i>,
 }
 
 impl<'i> TypedRule<'i> for Expr<'i> {
@@ -1646,11 +1646,11 @@ impl<'i> TypedRule<'i> for Expr<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_ternaryprec = Vec::<&'i TernaryPrec>::new_in(alloc);
+        let mut _tmp_ternary_prec = Vec::<&'i TernaryPrec>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::TernaryPrec => _tmp_ternaryprec.push(TernaryPrec::build(child, alloc)),
+                Rule::TernaryPrec => _tmp_ternary_prec.push(TernaryPrec::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1659,7 +1659,7 @@ impl<'i> TypedRule<'i> for Expr<'i> {
         }
         alloc.alloc(Self {
             _span,
-            ternaryprec: to_singleton(_tmp_ternaryprec),
+            ternary_prec: to_singleton(_tmp_ternary_prec),
         })
     }
 }
@@ -1668,8 +1668,8 @@ impl<'i> TypedRule<'i> for Expr<'i> {
 #[derive(Debug)]
 pub struct TernaryPrec<'i> {
     pub _span: Span<'i>,
-    pub logicalorprec: &'i LogicalOrPrec<'i>,
-    pub questionmark: Option<&'i QuestionMark<'i>>,
+    pub logical_or_prec: &'i LogicalOrPrec<'i>,
+    pub question_mark: Option<&'i QuestionMark<'i>>,
     pub expr: &'i Vec<'i, &'i Expr<'i>>,
     pub colon: Option<&'i Colon<'i>>,
 }
@@ -1682,15 +1682,15 @@ impl<'i> TypedRule<'i> for TernaryPrec<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_logicalorprec = Vec::<&'i LogicalOrPrec>::new_in(alloc);
-        let mut _tmp_questionmark = Vec::<&'i QuestionMark>::new_in(alloc);
+        let mut _tmp_logical_or_prec = Vec::<&'i LogicalOrPrec>::new_in(alloc);
+        let mut _tmp_question_mark = Vec::<&'i QuestionMark>::new_in(alloc);
         let mut _tmp_expr = Vec::<&'i Expr>::new_in(alloc);
         let mut _tmp_colon = Vec::<&'i Colon>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::LogicalOrPrec => _tmp_logicalorprec.push(LogicalOrPrec::build(child, alloc)),
-                Rule::QuestionMark => _tmp_questionmark.push(QuestionMark::build(child, alloc)),
+                Rule::LogicalOrPrec => _tmp_logical_or_prec.push(LogicalOrPrec::build(child, alloc)),
+                Rule::QuestionMark => _tmp_question_mark.push(QuestionMark::build(child, alloc)),
                 Rule::Expr => _tmp_expr.push(Expr::build(child, alloc)),
                 Rule::Colon => _tmp_colon.push(Colon::build(child, alloc)),
                 Rule::EOI => (),
@@ -1701,8 +1701,8 @@ impl<'i> TypedRule<'i> for TernaryPrec<'i> {
         }
         alloc.alloc(Self {
             _span,
-            logicalorprec: to_singleton(_tmp_logicalorprec),
-            questionmark: to_option(_tmp_questionmark),
+            logical_or_prec: to_singleton(_tmp_logical_or_prec),
+            question_mark: to_option(_tmp_question_mark),
             expr: alloc.alloc(_tmp_expr),
             colon: to_option(_tmp_colon),
         })
@@ -1713,8 +1713,8 @@ impl<'i> TypedRule<'i> for TernaryPrec<'i> {
 #[derive(Debug)]
 pub struct LogicalOrPrec<'i> {
     pub _span: Span<'i>,
-    pub logicalandprec: &'i Vec<'i, &'i LogicalAndPrec<'i>>,
-    pub logicalor: &'i Vec<'i, &'i LogicalOr<'i>>,
+    pub logical_and_prec: &'i Vec<'i, &'i LogicalAndPrec<'i>>,
+    pub logical_or: &'i Vec<'i, &'i LogicalOr<'i>>,
 }
 
 impl<'i> TypedRule<'i> for LogicalOrPrec<'i> {
@@ -1725,13 +1725,13 @@ impl<'i> TypedRule<'i> for LogicalOrPrec<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_logicalandprec = Vec::<&'i LogicalAndPrec>::new_in(alloc);
-        let mut _tmp_logicalor = Vec::<&'i LogicalOr>::new_in(alloc);
+        let mut _tmp_logical_and_prec = Vec::<&'i LogicalAndPrec>::new_in(alloc);
+        let mut _tmp_logical_or = Vec::<&'i LogicalOr>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::LogicalAndPrec => _tmp_logicalandprec.push(LogicalAndPrec::build(child, alloc)),
-                Rule::LogicalOr => _tmp_logicalor.push(LogicalOr::build(child, alloc)),
+                Rule::LogicalAndPrec => _tmp_logical_and_prec.push(LogicalAndPrec::build(child, alloc)),
+                Rule::LogicalOr => _tmp_logical_or.push(LogicalOr::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1740,8 +1740,8 @@ impl<'i> TypedRule<'i> for LogicalOrPrec<'i> {
         }
         alloc.alloc(Self {
             _span,
-            logicalandprec: alloc.alloc(_tmp_logicalandprec),
-            logicalor: alloc.alloc(_tmp_logicalor),
+            logical_and_prec: alloc.alloc(_tmp_logical_and_prec),
+            logical_or: alloc.alloc(_tmp_logical_or),
         })
     }
 }
@@ -1750,8 +1750,8 @@ impl<'i> TypedRule<'i> for LogicalOrPrec<'i> {
 #[derive(Debug)]
 pub struct LogicalAndPrec<'i> {
     pub _span: Span<'i>,
-    pub bitwiseorprec: &'i Vec<'i, &'i BitwiseOrPrec<'i>>,
-    pub logicaland: &'i Vec<'i, &'i LogicalAnd<'i>>,
+    pub bitwise_or_prec: &'i Vec<'i, &'i BitwiseOrPrec<'i>>,
+    pub logical_and: &'i Vec<'i, &'i LogicalAnd<'i>>,
 }
 
 impl<'i> TypedRule<'i> for LogicalAndPrec<'i> {
@@ -1762,13 +1762,13 @@ impl<'i> TypedRule<'i> for LogicalAndPrec<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_bitwiseorprec = Vec::<&'i BitwiseOrPrec>::new_in(alloc);
-        let mut _tmp_logicaland = Vec::<&'i LogicalAnd>::new_in(alloc);
+        let mut _tmp_bitwise_or_prec = Vec::<&'i BitwiseOrPrec>::new_in(alloc);
+        let mut _tmp_logical_and = Vec::<&'i LogicalAnd>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::BitwiseOrPrec => _tmp_bitwiseorprec.push(BitwiseOrPrec::build(child, alloc)),
-                Rule::LogicalAnd => _tmp_logicaland.push(LogicalAnd::build(child, alloc)),
+                Rule::BitwiseOrPrec => _tmp_bitwise_or_prec.push(BitwiseOrPrec::build(child, alloc)),
+                Rule::LogicalAnd => _tmp_logical_and.push(LogicalAnd::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1777,8 +1777,8 @@ impl<'i> TypedRule<'i> for LogicalAndPrec<'i> {
         }
         alloc.alloc(Self {
             _span,
-            bitwiseorprec: alloc.alloc(_tmp_bitwiseorprec),
-            logicaland: alloc.alloc(_tmp_logicaland),
+            bitwise_or_prec: alloc.alloc(_tmp_bitwise_or_prec),
+            logical_and: alloc.alloc(_tmp_logical_and),
         })
     }
 }
@@ -1787,8 +1787,8 @@ impl<'i> TypedRule<'i> for LogicalAndPrec<'i> {
 #[derive(Debug)]
 pub struct BitwiseOrPrec<'i> {
     pub _span: Span<'i>,
-    pub bitwisexorprec: &'i Vec<'i, &'i BitwiseXorPrec<'i>>,
-    pub bitwiseor: &'i Vec<'i, &'i BitwiseOr<'i>>,
+    pub bitwise_xor_prec: &'i Vec<'i, &'i BitwiseXorPrec<'i>>,
+    pub bitwise_or: &'i Vec<'i, &'i BitwiseOr<'i>>,
 }
 
 impl<'i> TypedRule<'i> for BitwiseOrPrec<'i> {
@@ -1799,13 +1799,13 @@ impl<'i> TypedRule<'i> for BitwiseOrPrec<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_bitwisexorprec = Vec::<&'i BitwiseXorPrec>::new_in(alloc);
-        let mut _tmp_bitwiseor = Vec::<&'i BitwiseOr>::new_in(alloc);
+        let mut _tmp_bitwise_xor_prec = Vec::<&'i BitwiseXorPrec>::new_in(alloc);
+        let mut _tmp_bitwise_or = Vec::<&'i BitwiseOr>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::BitwiseXorPrec => _tmp_bitwisexorprec.push(BitwiseXorPrec::build(child, alloc)),
-                Rule::BitwiseOr => _tmp_bitwiseor.push(BitwiseOr::build(child, alloc)),
+                Rule::BitwiseXorPrec => _tmp_bitwise_xor_prec.push(BitwiseXorPrec::build(child, alloc)),
+                Rule::BitwiseOr => _tmp_bitwise_or.push(BitwiseOr::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1814,8 +1814,8 @@ impl<'i> TypedRule<'i> for BitwiseOrPrec<'i> {
         }
         alloc.alloc(Self {
             _span,
-            bitwisexorprec: alloc.alloc(_tmp_bitwisexorprec),
-            bitwiseor: alloc.alloc(_tmp_bitwiseor),
+            bitwise_xor_prec: alloc.alloc(_tmp_bitwise_xor_prec),
+            bitwise_or: alloc.alloc(_tmp_bitwise_or),
         })
     }
 }
@@ -1824,8 +1824,8 @@ impl<'i> TypedRule<'i> for BitwiseOrPrec<'i> {
 #[derive(Debug)]
 pub struct BitwiseXorPrec<'i> {
     pub _span: Span<'i>,
-    pub bitwiseandprec: &'i Vec<'i, &'i BitwiseAndPrec<'i>>,
-    pub bitwisexor: &'i Vec<'i, &'i BitwiseXor<'i>>,
+    pub bitwise_and_prec: &'i Vec<'i, &'i BitwiseAndPrec<'i>>,
+    pub bitwise_xor: &'i Vec<'i, &'i BitwiseXor<'i>>,
 }
 
 impl<'i> TypedRule<'i> for BitwiseXorPrec<'i> {
@@ -1836,13 +1836,13 @@ impl<'i> TypedRule<'i> for BitwiseXorPrec<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_bitwiseandprec = Vec::<&'i BitwiseAndPrec>::new_in(alloc);
-        let mut _tmp_bitwisexor = Vec::<&'i BitwiseXor>::new_in(alloc);
+        let mut _tmp_bitwise_and_prec = Vec::<&'i BitwiseAndPrec>::new_in(alloc);
+        let mut _tmp_bitwise_xor = Vec::<&'i BitwiseXor>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::BitwiseAndPrec => _tmp_bitwiseandprec.push(BitwiseAndPrec::build(child, alloc)),
-                Rule::BitwiseXor => _tmp_bitwisexor.push(BitwiseXor::build(child, alloc)),
+                Rule::BitwiseAndPrec => _tmp_bitwise_and_prec.push(BitwiseAndPrec::build(child, alloc)),
+                Rule::BitwiseXor => _tmp_bitwise_xor.push(BitwiseXor::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1851,8 +1851,8 @@ impl<'i> TypedRule<'i> for BitwiseXorPrec<'i> {
         }
         alloc.alloc(Self {
             _span,
-            bitwiseandprec: alloc.alloc(_tmp_bitwiseandprec),
-            bitwisexor: alloc.alloc(_tmp_bitwisexor),
+            bitwise_and_prec: alloc.alloc(_tmp_bitwise_and_prec),
+            bitwise_xor: alloc.alloc(_tmp_bitwise_xor),
         })
     }
 }
@@ -1861,8 +1861,8 @@ impl<'i> TypedRule<'i> for BitwiseXorPrec<'i> {
 #[derive(Debug)]
 pub struct BitwiseAndPrec<'i> {
     pub _span: Span<'i>,
-    pub equalprec: &'i Vec<'i, &'i EqualPrec<'i>>,
-    pub bitwiseand: &'i Vec<'i, &'i BitwiseAnd<'i>>,
+    pub equal_prec: &'i Vec<'i, &'i EqualPrec<'i>>,
+    pub bitwise_and: &'i Vec<'i, &'i BitwiseAnd<'i>>,
 }
 
 impl<'i> TypedRule<'i> for BitwiseAndPrec<'i> {
@@ -1873,13 +1873,13 @@ impl<'i> TypedRule<'i> for BitwiseAndPrec<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_equalprec = Vec::<&'i EqualPrec>::new_in(alloc);
-        let mut _tmp_bitwiseand = Vec::<&'i BitwiseAnd>::new_in(alloc);
+        let mut _tmp_equal_prec = Vec::<&'i EqualPrec>::new_in(alloc);
+        let mut _tmp_bitwise_and = Vec::<&'i BitwiseAnd>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::EqualPrec => _tmp_equalprec.push(EqualPrec::build(child, alloc)),
-                Rule::BitwiseAnd => _tmp_bitwiseand.push(BitwiseAnd::build(child, alloc)),
+                Rule::EqualPrec => _tmp_equal_prec.push(EqualPrec::build(child, alloc)),
+                Rule::BitwiseAnd => _tmp_bitwise_and.push(BitwiseAnd::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1888,8 +1888,8 @@ impl<'i> TypedRule<'i> for BitwiseAndPrec<'i> {
         }
         alloc.alloc(Self {
             _span,
-            equalprec: alloc.alloc(_tmp_equalprec),
-            bitwiseand: alloc.alloc(_tmp_bitwiseand),
+            equal_prec: alloc.alloc(_tmp_equal_prec),
+            bitwise_and: alloc.alloc(_tmp_bitwise_and),
         })
     }
 }
@@ -1898,8 +1898,8 @@ impl<'i> TypedRule<'i> for BitwiseAndPrec<'i> {
 #[derive(Debug)]
 pub struct EqualPrec<'i> {
     pub _span: Span<'i>,
-    pub compareprec: &'i Vec<'i, &'i ComparePrec<'i>>,
-    pub equalprecop: &'i Vec<'i, &'i EqualPrecOp<'i>>,
+    pub compare_prec: &'i Vec<'i, &'i ComparePrec<'i>>,
+    pub equal_prec_op: &'i Vec<'i, &'i EqualPrecOp<'i>>,
 }
 
 impl<'i> TypedRule<'i> for EqualPrec<'i> {
@@ -1910,13 +1910,13 @@ impl<'i> TypedRule<'i> for EqualPrec<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_compareprec = Vec::<&'i ComparePrec>::new_in(alloc);
-        let mut _tmp_equalprecop = Vec::<&'i EqualPrecOp>::new_in(alloc);
+        let mut _tmp_compare_prec = Vec::<&'i ComparePrec>::new_in(alloc);
+        let mut _tmp_equal_prec_op = Vec::<&'i EqualPrecOp>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::ComparePrec => _tmp_compareprec.push(ComparePrec::build(child, alloc)),
-                Rule::EqualPrecOp => _tmp_equalprecop.push(EqualPrecOp::build(child, alloc)),
+                Rule::ComparePrec => _tmp_compare_prec.push(ComparePrec::build(child, alloc)),
+                Rule::EqualPrecOp => _tmp_equal_prec_op.push(EqualPrecOp::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1925,8 +1925,8 @@ impl<'i> TypedRule<'i> for EqualPrec<'i> {
         }
         alloc.alloc(Self {
             _span,
-            compareprec: alloc.alloc(_tmp_compareprec),
-            equalprecop: alloc.alloc(_tmp_equalprecop),
+            compare_prec: alloc.alloc(_tmp_compare_prec),
+            equal_prec_op: alloc.alloc(_tmp_equal_prec_op),
         })
     }
 }
@@ -1935,8 +1935,8 @@ impl<'i> TypedRule<'i> for EqualPrec<'i> {
 #[derive(Debug)]
 pub struct ComparePrec<'i> {
     pub _span: Span<'i>,
-    pub shiftprec: &'i Vec<'i, &'i ShiftPrec<'i>>,
-    pub compareprecop: &'i Vec<'i, &'i ComparePrecOp<'i>>,
+    pub shift_prec: &'i Vec<'i, &'i ShiftPrec<'i>>,
+    pub compare_prec_op: &'i Vec<'i, &'i ComparePrecOp<'i>>,
 }
 
 impl<'i> TypedRule<'i> for ComparePrec<'i> {
@@ -1947,13 +1947,13 @@ impl<'i> TypedRule<'i> for ComparePrec<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_shiftprec = Vec::<&'i ShiftPrec>::new_in(alloc);
-        let mut _tmp_compareprecop = Vec::<&'i ComparePrecOp>::new_in(alloc);
+        let mut _tmp_shift_prec = Vec::<&'i ShiftPrec>::new_in(alloc);
+        let mut _tmp_compare_prec_op = Vec::<&'i ComparePrecOp>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::ShiftPrec => _tmp_shiftprec.push(ShiftPrec::build(child, alloc)),
-                Rule::ComparePrecOp => _tmp_compareprecop.push(ComparePrecOp::build(child, alloc)),
+                Rule::ShiftPrec => _tmp_shift_prec.push(ShiftPrec::build(child, alloc)),
+                Rule::ComparePrecOp => _tmp_compare_prec_op.push(ComparePrecOp::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1962,8 +1962,8 @@ impl<'i> TypedRule<'i> for ComparePrec<'i> {
         }
         alloc.alloc(Self {
             _span,
-            shiftprec: alloc.alloc(_tmp_shiftprec),
-            compareprecop: alloc.alloc(_tmp_compareprecop),
+            shift_prec: alloc.alloc(_tmp_shift_prec),
+            compare_prec_op: alloc.alloc(_tmp_compare_prec_op),
         })
     }
 }
@@ -1972,8 +1972,8 @@ impl<'i> TypedRule<'i> for ComparePrec<'i> {
 #[derive(Debug)]
 pub struct ShiftPrec<'i> {
     pub _span: Span<'i>,
-    pub addprec: &'i Vec<'i, &'i AddPrec<'i>>,
-    pub shiftprecop: &'i Vec<'i, &'i ShiftPrecOp<'i>>,
+    pub add_prec: &'i Vec<'i, &'i AddPrec<'i>>,
+    pub shift_prec_op: &'i Vec<'i, &'i ShiftPrecOp<'i>>,
 }
 
 impl<'i> TypedRule<'i> for ShiftPrec<'i> {
@@ -1984,13 +1984,13 @@ impl<'i> TypedRule<'i> for ShiftPrec<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_addprec = Vec::<&'i AddPrec>::new_in(alloc);
-        let mut _tmp_shiftprecop = Vec::<&'i ShiftPrecOp>::new_in(alloc);
+        let mut _tmp_add_prec = Vec::<&'i AddPrec>::new_in(alloc);
+        let mut _tmp_shift_prec_op = Vec::<&'i ShiftPrecOp>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::AddPrec => _tmp_addprec.push(AddPrec::build(child, alloc)),
-                Rule::ShiftPrecOp => _tmp_shiftprecop.push(ShiftPrecOp::build(child, alloc)),
+                Rule::AddPrec => _tmp_add_prec.push(AddPrec::build(child, alloc)),
+                Rule::ShiftPrecOp => _tmp_shift_prec_op.push(ShiftPrecOp::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -1999,8 +1999,8 @@ impl<'i> TypedRule<'i> for ShiftPrec<'i> {
         }
         alloc.alloc(Self {
             _span,
-            addprec: alloc.alloc(_tmp_addprec),
-            shiftprecop: alloc.alloc(_tmp_shiftprecop),
+            add_prec: alloc.alloc(_tmp_add_prec),
+            shift_prec_op: alloc.alloc(_tmp_shift_prec_op),
         })
     }
 }
@@ -2009,8 +2009,8 @@ impl<'i> TypedRule<'i> for ShiftPrec<'i> {
 #[derive(Debug)]
 pub struct AddPrec<'i> {
     pub _span: Span<'i>,
-    pub mulprec: &'i Vec<'i, &'i MulPrec<'i>>,
-    pub addprecop: &'i Vec<'i, &'i AddPrecOp<'i>>,
+    pub mul_prec: &'i Vec<'i, &'i MulPrec<'i>>,
+    pub add_prec_op: &'i Vec<'i, &'i AddPrecOp<'i>>,
 }
 
 impl<'i> TypedRule<'i> for AddPrec<'i> {
@@ -2021,13 +2021,13 @@ impl<'i> TypedRule<'i> for AddPrec<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_mulprec = Vec::<&'i MulPrec>::new_in(alloc);
-        let mut _tmp_addprecop = Vec::<&'i AddPrecOp>::new_in(alloc);
+        let mut _tmp_mul_prec = Vec::<&'i MulPrec>::new_in(alloc);
+        let mut _tmp_add_prec_op = Vec::<&'i AddPrecOp>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::MulPrec => _tmp_mulprec.push(MulPrec::build(child, alloc)),
-                Rule::AddPrecOp => _tmp_addprecop.push(AddPrecOp::build(child, alloc)),
+                Rule::MulPrec => _tmp_mul_prec.push(MulPrec::build(child, alloc)),
+                Rule::AddPrecOp => _tmp_add_prec_op.push(AddPrecOp::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -2036,8 +2036,8 @@ impl<'i> TypedRule<'i> for AddPrec<'i> {
         }
         alloc.alloc(Self {
             _span,
-            mulprec: alloc.alloc(_tmp_mulprec),
-            addprecop: alloc.alloc(_tmp_addprecop),
+            mul_prec: alloc.alloc(_tmp_mul_prec),
+            add_prec_op: alloc.alloc(_tmp_add_prec_op),
         })
     }
 }
@@ -2046,8 +2046,8 @@ impl<'i> TypedRule<'i> for AddPrec<'i> {
 #[derive(Debug)]
 pub struct MulPrec<'i> {
     pub _span: Span<'i>,
-    pub unaryprec: &'i Vec<'i, &'i UnaryPrec<'i>>,
-    pub mulprecop: &'i Vec<'i, &'i MulPrecOp<'i>>,
+    pub unary_prec: &'i Vec<'i, &'i UnaryPrec<'i>>,
+    pub mul_prec_op: &'i Vec<'i, &'i MulPrecOp<'i>>,
 }
 
 impl<'i> TypedRule<'i> for MulPrec<'i> {
@@ -2058,13 +2058,13 @@ impl<'i> TypedRule<'i> for MulPrec<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_unaryprec = Vec::<&'i UnaryPrec>::new_in(alloc);
-        let mut _tmp_mulprecop = Vec::<&'i MulPrecOp>::new_in(alloc);
+        let mut _tmp_unary_prec = Vec::<&'i UnaryPrec>::new_in(alloc);
+        let mut _tmp_mul_prec_op = Vec::<&'i MulPrecOp>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::UnaryPrec => _tmp_unaryprec.push(UnaryPrec::build(child, alloc)),
-                Rule::MulPrecOp => _tmp_mulprecop.push(MulPrecOp::build(child, alloc)),
+                Rule::UnaryPrec => _tmp_unary_prec.push(UnaryPrec::build(child, alloc)),
+                Rule::MulPrecOp => _tmp_mul_prec_op.push(MulPrecOp::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -2073,8 +2073,8 @@ impl<'i> TypedRule<'i> for MulPrec<'i> {
         }
         alloc.alloc(Self {
             _span,
-            unaryprec: alloc.alloc(_tmp_unaryprec),
-            mulprecop: alloc.alloc(_tmp_mulprecop),
+            unary_prec: alloc.alloc(_tmp_unary_prec),
+            mul_prec_op: alloc.alloc(_tmp_mul_prec_op),
         })
     }
 }
@@ -2112,8 +2112,8 @@ impl<'i> TypedRule<'i> for UnaryPrec<'i> {
 #[derive(Debug)]
 pub struct UnaryExpr<'i> {
     pub _span: Span<'i>,
-    pub unaryop: &'i UnaryOp<'i>,
-    pub unaryprec: &'i UnaryPrec<'i>,
+    pub unary_op: &'i UnaryOp<'i>,
+    pub unary_prec: &'i UnaryPrec<'i>,
 }
 
 impl<'i> TypedRule<'i> for UnaryExpr<'i> {
@@ -2124,13 +2124,13 @@ impl<'i> TypedRule<'i> for UnaryExpr<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_unaryop = Vec::<&'i UnaryOp>::new_in(alloc);
-        let mut _tmp_unaryprec = Vec::<&'i UnaryPrec>::new_in(alloc);
+        let mut _tmp_unary_op = Vec::<&'i UnaryOp>::new_in(alloc);
+        let mut _tmp_unary_prec = Vec::<&'i UnaryPrec>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::UnaryOp => _tmp_unaryop.push(UnaryOp::build(child, alloc)),
-                Rule::UnaryPrec => _tmp_unaryprec.push(UnaryPrec::build(child, alloc)),
+                Rule::UnaryOp => _tmp_unary_op.push(UnaryOp::build(child, alloc)),
+                Rule::UnaryPrec => _tmp_unary_prec.push(UnaryPrec::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -2139,8 +2139,8 @@ impl<'i> TypedRule<'i> for UnaryExpr<'i> {
         }
         alloc.alloc(Self {
             _span,
-            unaryop: to_singleton(_tmp_unaryop),
-            unaryprec: to_singleton(_tmp_unaryprec),
+            unary_op: to_singleton(_tmp_unary_op),
+            unary_prec: to_singleton(_tmp_unary_prec),
         })
     }
 }
@@ -2827,9 +2827,9 @@ impl<'i> TypedRule<'i> for QuotedString<'i> {
 #[derive(Debug)]
 pub struct ByteString<'i> {
     pub _span: Span<'i>,
-    pub opensquare: &'i OpenSquare<'i>,
-    pub labelorhexbyte: &'i Vec<'i, &'i LabelOrHexByte<'i>>,
-    pub closesquare: &'i CloseSquare<'i>,
+    pub open_square: &'i OpenSquare<'i>,
+    pub label_or_hex_byte: &'i Vec<'i, &'i LabelOrHexByte<'i>>,
+    pub close_square: &'i CloseSquare<'i>,
 }
 
 impl<'i> TypedRule<'i> for ByteString<'i> {
@@ -2840,15 +2840,15 @@ impl<'i> TypedRule<'i> for ByteString<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_opensquare = Vec::<&'i OpenSquare>::new_in(alloc);
-        let mut _tmp_labelorhexbyte = Vec::<&'i LabelOrHexByte>::new_in(alloc);
-        let mut _tmp_closesquare = Vec::<&'i CloseSquare>::new_in(alloc);
+        let mut _tmp_open_square = Vec::<&'i OpenSquare>::new_in(alloc);
+        let mut _tmp_label_or_hex_byte = Vec::<&'i LabelOrHexByte>::new_in(alloc);
+        let mut _tmp_close_square = Vec::<&'i CloseSquare>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::OpenSquare => _tmp_opensquare.push(OpenSquare::build(child, alloc)),
-                Rule::LabelOrHexByte => _tmp_labelorhexbyte.push(LabelOrHexByte::build(child, alloc)),
-                Rule::CloseSquare => _tmp_closesquare.push(CloseSquare::build(child, alloc)),
+                Rule::OpenSquare => _tmp_open_square.push(OpenSquare::build(child, alloc)),
+                Rule::LabelOrHexByte => _tmp_label_or_hex_byte.push(LabelOrHexByte::build(child, alloc)),
+                Rule::CloseSquare => _tmp_close_square.push(CloseSquare::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -2857,9 +2857,9 @@ impl<'i> TypedRule<'i> for ByteString<'i> {
         }
         alloc.alloc(Self {
             _span,
-            opensquare: to_singleton(_tmp_opensquare),
-            labelorhexbyte: alloc.alloc(_tmp_labelorhexbyte),
-            closesquare: to_singleton(_tmp_closesquare),
+            open_square: to_singleton(_tmp_open_square),
+            label_or_hex_byte: alloc.alloc(_tmp_label_or_hex_byte),
+            close_square: to_singleton(_tmp_close_square),
         })
     }
 }
@@ -2939,10 +2939,10 @@ impl<'i> TypedRule<'i> for HexByte<'i> {
 #[derive(Debug)]
 pub struct Incbin<'i> {
     pub _span: Span<'i>,
-    pub slashincbin: &'i SlashIncbin<'i>,
-    pub openparen: &'i OpenParen<'i>,
-    pub incbinargs: &'i IncbinArgs<'i>,
-    pub closeparen: &'i CloseParen<'i>,
+    pub slash_incbin: &'i SlashIncbin<'i>,
+    pub open_paren: &'i OpenParen<'i>,
+    pub incbin_args: &'i IncbinArgs<'i>,
+    pub close_paren: &'i CloseParen<'i>,
 }
 
 impl<'i> TypedRule<'i> for Incbin<'i> {
@@ -2953,17 +2953,17 @@ impl<'i> TypedRule<'i> for Incbin<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_slashincbin = Vec::<&'i SlashIncbin>::new_in(alloc);
-        let mut _tmp_openparen = Vec::<&'i OpenParen>::new_in(alloc);
-        let mut _tmp_incbinargs = Vec::<&'i IncbinArgs>::new_in(alloc);
-        let mut _tmp_closeparen = Vec::<&'i CloseParen>::new_in(alloc);
+        let mut _tmp_slash_incbin = Vec::<&'i SlashIncbin>::new_in(alloc);
+        let mut _tmp_open_paren = Vec::<&'i OpenParen>::new_in(alloc);
+        let mut _tmp_incbin_args = Vec::<&'i IncbinArgs>::new_in(alloc);
+        let mut _tmp_close_paren = Vec::<&'i CloseParen>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::SlashIncbin => _tmp_slashincbin.push(SlashIncbin::build(child, alloc)),
-                Rule::OpenParen => _tmp_openparen.push(OpenParen::build(child, alloc)),
-                Rule::IncbinArgs => _tmp_incbinargs.push(IncbinArgs::build(child, alloc)),
-                Rule::CloseParen => _tmp_closeparen.push(CloseParen::build(child, alloc)),
+                Rule::SlashIncbin => _tmp_slash_incbin.push(SlashIncbin::build(child, alloc)),
+                Rule::OpenParen => _tmp_open_paren.push(OpenParen::build(child, alloc)),
+                Rule::IncbinArgs => _tmp_incbin_args.push(IncbinArgs::build(child, alloc)),
+                Rule::CloseParen => _tmp_close_paren.push(CloseParen::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -2972,10 +2972,10 @@ impl<'i> TypedRule<'i> for Incbin<'i> {
         }
         alloc.alloc(Self {
             _span,
-            slashincbin: to_singleton(_tmp_slashincbin),
-            openparen: to_singleton(_tmp_openparen),
-            incbinargs: to_singleton(_tmp_incbinargs),
-            closeparen: to_singleton(_tmp_closeparen),
+            slash_incbin: to_singleton(_tmp_slash_incbin),
+            open_paren: to_singleton(_tmp_open_paren),
+            incbin_args: to_singleton(_tmp_incbin_args),
+            close_paren: to_singleton(_tmp_close_paren),
         })
     }
 }
@@ -2984,9 +2984,9 @@ impl<'i> TypedRule<'i> for Incbin<'i> {
 #[derive(Debug)]
 pub struct IncbinArgs<'i> {
     pub _span: Span<'i>,
-    pub quotedstring: &'i QuotedString<'i>,
+    pub quoted_string: &'i QuotedString<'i>,
     pub comma: &'i Vec<'i, &'i Comma<'i>>,
-    pub numericliteral: &'i Vec<'i, &'i NumericLiteral<'i>>,
+    pub numeric_literal: &'i Vec<'i, &'i NumericLiteral<'i>>,
 }
 
 impl<'i> TypedRule<'i> for IncbinArgs<'i> {
@@ -2997,15 +2997,15 @@ impl<'i> TypedRule<'i> for IncbinArgs<'i> {
     fn build(pair: Pair<'i, Rule>, alloc: &'i Bump) -> &'i Self {
         assert_eq!(Self::UNTYPED_RULE, pair.as_rule());
         let _span = pair.as_span();
-        let mut _tmp_quotedstring = Vec::<&'i QuotedString>::new_in(alloc);
+        let mut _tmp_quoted_string = Vec::<&'i QuotedString>::new_in(alloc);
         let mut _tmp_comma = Vec::<&'i Comma>::new_in(alloc);
-        let mut _tmp_numericliteral = Vec::<&'i NumericLiteral>::new_in(alloc);
+        let mut _tmp_numeric_literal = Vec::<&'i NumericLiteral>::new_in(alloc);
 
         for child in pair.into_inner() {
             match child.as_rule() {
-                Rule::QuotedString => _tmp_quotedstring.push(QuotedString::build(child, alloc)),
+                Rule::QuotedString => _tmp_quoted_string.push(QuotedString::build(child, alloc)),
                 Rule::Comma => _tmp_comma.push(Comma::build(child, alloc)),
-                Rule::NumericLiteral => _tmp_numericliteral.push(NumericLiteral::build(child, alloc)),
+                Rule::NumericLiteral => _tmp_numeric_literal.push(NumericLiteral::build(child, alloc)),
                 Rule::EOI => (),
                 Rule::WHITESPACE => (),
                 Rule::COMMENT => (),
@@ -3014,9 +3014,9 @@ impl<'i> TypedRule<'i> for IncbinArgs<'i> {
         }
         alloc.alloc(Self {
             _span,
-            quotedstring: to_singleton(_tmp_quotedstring),
+            quoted_string: to_singleton(_tmp_quoted_string),
             comma: alloc.alloc(_tmp_comma),
-            numericliteral: alloc.alloc(_tmp_numericliteral),
+            numeric_literal: alloc.alloc(_tmp_numeric_literal),
         })
     }
 }

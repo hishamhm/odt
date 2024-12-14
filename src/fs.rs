@@ -1,11 +1,11 @@
 //! Facilities for reading sources from the filesystem.
 
 use crate::error::SourceError;
+use bumpalo::Bump;
 use core::fmt::Write;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use bumpalo::Bump;
 
 /// A stateful helper for loading source files from a list of include directories to be searched.
 pub struct Loader {
