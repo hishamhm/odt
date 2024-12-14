@@ -17,7 +17,6 @@ wrapping-arithmetic = []
 
 [[bin]]
 name = "cargo-dtc"
-path = "src/bin/dtc.rs"
 
 [[bin]]
 name = "dtc"
