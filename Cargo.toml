@@ -16,6 +16,10 @@ pestle = "0.1"
 wrapping-arithmetic = []
 
 [[bin]]
+name = "cargo-dtc"
+path = "src/bin/dtc.rs"
+
+[[bin]]
 name = "dtc"
 
 [[bin]]

@@ -1,6 +1,6 @@
 use clap::Parser as _;
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(clap::Parser)]
 #[command(version)]
@@ -31,7 +31,17 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
+    let mut argv = std::env::args_os().peekable();
+    let exe = argv.peek().unwrap();
+    if Path::new(exe).ends_with("cargo-dtc") {
+        // When invoked as `cargo dtc`, we get an extra `dtc` as the first argument.
+        // Compensate by shifting away argv[0].
+        argv.next();
+        if argv.peek().map(|os| os.to_str()) != Some(Some("dtc")) {
+            panic!("invoked as cargo-dtc without extra 'dtc' argument");
+        }
+    }
+    let args = Args::parse_from(argv);
     assert!(args.in_format == "dts", "only DTS input is supported");
     assert!(args.out_format == "dtb", "only binary output is supported");
     // TODO: optionally read from stdin -- won't work via loader
