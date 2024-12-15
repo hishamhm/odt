@@ -11,11 +11,11 @@ struct Args {
 
     /// Input format
     #[arg(short = 'I', long, value_name = "format", default_value = "dts")]
-    in_format: String,
+    in_format: Format,
 
     /// Output format
     #[arg(short = 'O', long, value_name = "format", default_value = "dtb")]
-    out_format: String,
+    out_format: Format,
 
     /// Output file (stdout if omitted)
     #[arg(short = 'o', long, value_name = "path")]
@@ -30,12 +30,23 @@ struct Args {
     include: Vec<PathBuf>,
 }
 
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
+enum Format {
+    /// devicetree source
+    DTS,
+    /// devicetree blob
+    DTB,
+}
+
 pub fn dtc_main(
     args: impl IntoIterator<Item = std::ffi::OsString>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse_from(args);
-    assert!(args.in_format == "dts", "only DTS input is supported");
-    assert!(args.out_format == "dtb", "only binary output is supported");
+    assert!(args.in_format == Format::DTS, "only DTS input is supported");
+    assert!(
+        args.out_format == Format::DTB,
+        "only binary output is supported"
+    );
     // TODO: optionally read from stdin -- won't work via loader
     let loader = odt::fs::Loader::new(args.include);
     let input = &args.input_path;
