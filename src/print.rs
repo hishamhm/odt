@@ -1,7 +1,7 @@
-use crate::parse::{Rule, Tree};
+use crate::parse::{Parsed, Rule};
 use core::fmt::Write;
 
-pub fn format(dts: Tree) -> String {
+pub fn format(dts: Parsed) -> String {
     let mut pretty = PrettyPrinter::new();
     pretty.print(dts, Rule::EOI, Rule::EOI);
     pretty.out.buffer
@@ -95,7 +95,7 @@ impl PrettyPrinter {
         }
     }
 
-    fn print(&mut self, p: Tree, parent: Rule, next_sibling: Rule) {
+    fn print(&mut self, p: Parsed, parent: Rule, next_sibling: Rule) {
         let last = self.last;
         let rule = p.as_rule();
         let text = p.as_str();
@@ -127,7 +127,7 @@ impl PrettyPrinter {
             self.out.indent(indent * self.tabstop);
         }
 
-        let children: Vec<Tree> = p.into_inner().collect();
+        let children: Vec<Parsed> = p.into_inner().collect();
         if !children.is_empty() {
             // This is an interior rule; visit each child in turn.
             let mut it = children.iter();

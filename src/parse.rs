@@ -17,9 +17,9 @@ pub struct DtsParser;
 
 /// This is pest's untyped grammar, which is convenient for clients that
 /// wish to visit every character of the input.
-pub type Tree<'a> = Pair<'a, Rule>;
+pub type Parsed<'a> = Pair<'a, Rule>;
 
-pub fn parse_untyped(source: &str) -> Result<Tree, SourceError> {
+pub fn parse_untyped(source: &str) -> Result<Parsed, SourceError> {
     let mut it = DtsParser::parse(Rule::DtsFile, source)?;
     let dtsfile = it.next().unwrap();
     assert_eq!(dtsfile.as_rule(), Rule::DtsFile);
