@@ -42,7 +42,7 @@ pub fn parse_with_includes<'a>(loader: &'a Loader, path: &'_ Path) -> Result<Dts
     };
     let dts = parse_typed(src, &loader.arena).map_err(|e| e.with_path(path))?;
     // make an empty container to receive the merged tree
-    let mut top_def = dts.top_def.clone();
+    let mut top_def = Vec::new_in(&loader.arena);
     visit_includes(loader, path, dts, &mut top_def)?;
     let out = Dts {
         top_def: loader.arena.alloc(top_def),
