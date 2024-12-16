@@ -9,26 +9,24 @@ use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
 use std::borrow::Cow;
 
-pub fn eval(dts: &Dts) -> Result<Node, SourceError> {
-    // Transform the AST into a single tree of TempNodes.  This phase handles deletions of nodes
-    // and properties, property overrides, and label assignments.  Note that we may delete invalid
-    // constructs without evaluating them.  For example, we accept
-    //   / { x = <(0 / 0)>; };
-    //   / { /delete-property/ x; };
-    // while `dtc` does not.
-    let (mut root, node_labels) = build_temp_tree(dts)?;
-
-    // Assign phandles.
-    assign_phandles(&mut root, &node_labels)?;
-
-    // Evaluate expressions.
-    evaluate_expressions(&mut root, &node_labels)?;
-
-    // Convert to a `Node`-based tree.
-    Ok(from_temp_tree(root))
+/// Assign phandles, evaluate expressions, and convert to a `Node`-based tree.
+/// Call with the output of `merge()`.
+pub fn eval(mut tree: TempNode, node_labels: LabelMap) -> Result<Node, SourceError> {
+    assign_phandles(&mut tree, &node_labels)?;
+    evaluate_expressions(&mut tree, &node_labels)?;
+    Ok(from_temp_tree(tree))
 }
 
-fn build_temp_tree<'i>(dts: &Dts<'i>) -> Result<(TempNode<'i>, LabelMap), SourceError> {
+// TODO: move tree merging to its own module.
+// TODO: clean up type names, pub methods
+
+/// Transform the AST into a single tree of TempNodes.  This handles deletions of nodes and
+/// properties, property overrides, and label assignments.  Note that we may delete invalid
+/// constructs without evaluating them.  For example, we accept
+///   / { x = <(0 / 0)>; };
+///   / { /delete-property/ x; };
+/// while `dtc` does not.
+pub fn merge<'i>(dts: &Dts<'i>) -> Result<(TempNode<'i>, LabelMap), SourceError> {
     let mut root = TempNode::default();
     let mut node_labels = LabelMap::new();
     if let Some(memres) = dts.memreserve.first() {
@@ -45,7 +43,7 @@ fn build_temp_tree<'i>(dts: &Dts<'i>) -> Result<(TempNode<'i>, LabelMap), Source
                 };
                 let node = root.walk_mut(path.segments()).unwrap();
                 for label in topnode.label {
-                    add_label(&mut node_labels, label, &path)?;
+                    add_label(&mut node_labels, label, node, &path)?;
                 }
                 let contents = topnode.node_body.node_contents;
                 fill_temp_node(&mut node_labels, node, &path, contents)?;
@@ -514,6 +512,7 @@ fn from_temp_tree(root: TempNode) -> Node {
     let TempNode {
         properties,
         children,
+        ..
     } = root;
     let mut node = Node::default();
     for (name, tempvalue) in properties {
@@ -532,7 +531,7 @@ fn from_temp_tree(root: TempNode) -> Node {
 /// A portable subset of PathBuf needed for working with &{...} DTS path references.  The embedded
 /// string is normalized and always ends with a slash, simplifying `starts_with()` queries.
 #[derive(Clone, Eq, Hash, PartialEq)]
-struct NodePath(String);
+pub struct NodePath(String);
 
 impl NodePath {
     fn display(&self) -> &str {
@@ -596,10 +595,10 @@ impl core::fmt::Display for NodePath {
     }
 }
 
-type LabelMap = LinkedHashMap<String, NodePath>;
+pub type LabelMap = LinkedHashMap<String, NodePath>;
 
 #[derive(Clone)]
-enum TempValue<'a> {
+pub enum TempValue<'a> {
     Ast(&'a PropValue<'a>),
     Bytes(Vec<u8>),
 }
@@ -610,11 +609,58 @@ impl Default for TempValue<'_> {
     }
 }
 
-/// An intermediate representation used to gather deletes and overrides.  We used an
-/// order-preserving container to stay closer to the input.  (This doesn't match `dtc` perfectly in
-/// the presence of deletes, because it implements all deletes via tombstones.)
+impl<'a> core::fmt::Display for TempValue<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            TempValue::Ast(ast) => {
+                // TODO:  This retains comments and whitespace from the input.
+                // May want the output a bit more normalized.
+                write!(f, "{}", ast.str())
+            }
+            TempValue::Bytes(bytes) => {
+                // TODO: C string detection
+                if bytes.len() % 4 == 0 {
+                    write!(f, "<")?;
+                    let mut first = true;
+                    for w in bytes.chunks_exact(4) {
+                        if first {
+                            first = false;
+                        } else {
+                            write!(f, " ")?;
+                        }
+                        // TODO: stabilization of slice::array_chunks would simplify this
+                        let n = u32::from_be_bytes(w.try_into().unwrap());
+                        write!(f, "{n:#x}")?;
+                    }
+                    write!(f, ">")
+                } else {
+                    write!(f, "[")?;
+                    let mut first = true;
+                    for b in bytes {
+                        if first {
+                            first = false;
+                        } else {
+                            write!(f, " ")?;
+                        }
+                        write!(f, "{b:02x}")?;
+                    }
+                    write!(f, "]")
+                }
+            }
+        }
+    }
+}
+
+// TODO: move TempValue<'a> to a type parameter of TempNode
+
+/// An intermediate representation used to gather deletes and overrides.  We use
+/// an order-preserving container to stay closer to the input.
+///
+/// This doesn't match `dtc` in all cases.  Deleting a node and redefining it with
+/// the same name will move it to the end, but `dtc` remembers the original ordering.
 #[derive(Clone, Default)]
-struct TempNode<'a> {
+pub struct TempNode<'a> {
+    labels: LinkedHashSet<String>,
     properties: LinkedHashMap<String, TempValue<'a>>,
     children: LinkedHashMap<String, TempNode<'a>>,
 }
@@ -669,6 +715,41 @@ impl<'a> TempNode<'a> {
 
     fn remove_property(&mut self, name: &str) {
         self.properties.remove(name);
+    }
+
+    fn add_label(&mut self, name: &str) {
+        self.labels.replace(name.into());
+    }
+
+    pub fn labels_as_display(&self) -> LabelsDisplay {
+        LabelsDisplay(&self.labels)
+    }
+}
+
+impl<'a> core::fmt::Display for TempNode<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "{{")?;
+        for (name, value) in &self.properties {
+            writeln!(f, "{name} = {value};")?;
+        }
+        if !self.properties.is_empty() && !self.children.is_empty() {
+            writeln!(f)?;
+        }
+        for (name, node) in &self.children {
+            writeln!(f, "{}{name} {node};", node.labels_as_display())?;
+        }
+        write!(f, "}}")
+    }
+}
+
+pub struct LabelsDisplay<'a>(&'a LinkedHashSet<String>);
+
+impl<'a> core::fmt::Display for LabelsDisplay<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for label in self.0 {
+            write!(f, "{label}: ")?;
+        }
+        Ok(())
     }
 }
 
@@ -733,7 +814,7 @@ fn fill_temp_node<'a, 'b: 'a>(
                 let child = node.add_child(name);
                 for child_node_prefix in childnode.child_node_prefix {
                     if let ChildNodePrefix::Label(label) = child_node_prefix {
-                        add_label(node_labels, label, &child_path)?;
+                        add_label(node_labels, label, child, &child_path)?;
                     }
                 }
                 let contents = childnode.node_body.node_contents;
@@ -743,6 +824,7 @@ fn fill_temp_node<'a, 'b: 'a>(
                 let name = delnode.node_name.unescape_name();
                 node.remove_child(name);
                 let childpath = path.join(name);
+                // TODO:  This is potentially quadratic.  Could use the labels in the removed node.
                 node_labels.retain(|_, p| !p.starts_with(&childpath));
             }
         }
@@ -795,6 +877,7 @@ impl<'a> UnescapeName<'a> for PropName<'a> {
 fn add_label(
     node_labels: &mut LabelMap,
     label: &Label,
+    node: &mut TempNode,
     path: &NodePath,
 ) -> Result<(), SourceError> {
     let s = label.str().strip_suffix(':').unwrap();
@@ -811,6 +894,7 @@ fn add_label(
             return Err(label.err(format!("Duplicate label also on {old:?}")));
         }
     }
+    node.add_label(s);
     Ok(())
 }
 
@@ -819,7 +903,7 @@ fn test_duplicate_property() {
     let source = include_str!("testdata/duplicate_property.dts");
     let arena = bumpalo::Bump::new();
     let dts = crate::parse::parse_typed(source, &arena).unwrap();
-    let err = eval(dts).expect_err("evaluation should fail");
+    let err = merge(dts).map(|_| ()).expect_err("should fail");
     let message = format!("{err}");
     assert!(
         message.contains("duplicate property") && message.contains("this time it's an error"),
@@ -837,7 +921,8 @@ fn test_eval() {
     ] {
         let arena = bumpalo::Bump::new();
         let dts = crate::parse::parse_typed(source, &arena).unwrap();
-        let tree = eval(dts).unwrap();
+        let (tree, node_labels) = merge(&dts).unwrap();
+        let tree = eval(tree, node_labels).unwrap();
         for p in tree.properties {
             let name = &p.name;
             let v = &p.value;

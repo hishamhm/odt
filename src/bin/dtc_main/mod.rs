@@ -43,16 +43,11 @@ pub fn dtc_main(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse_from(args);
     assert!(args.in_format == Format::DTS, "only DTS input is supported");
-    assert!(
-        args.out_format == Format::DTB,
-        "only binary output is supported"
-    );
     // TODO: optionally read from stdin -- won't work via loader
     let loader = odt::fs::Loader::new(args.include);
     let input = &args.input_path;
     let dts = odt::parse::parse_with_includes(&loader, input).map_err(|e| loader.infer_path(e))?;
-    let root = odt::eval::eval(&dts).map_err(|e| loader.infer_path(e))?;
-    let dtb = odt::flat::serialize(&root);
+    let (tree, node_labels) = odt::eval::merge(&dts).map_err(|e| loader.infer_path(e))?;
     let mut goal = String::from("-");
     let mut writer: Box<dyn Write> = if let Some(outfile) = args.out {
         goal = outfile.to_string_lossy().into_owned();
@@ -60,7 +55,34 @@ pub fn dtc_main(
     } else {
         Box::new(BufWriter::new(std::io::stdout()))
     };
-    writer.write_all(&dtb)?;
+    match args.out_format {
+        Format::DTB => {
+            let tree = odt::eval::eval(tree, node_labels).map_err(|e| loader.infer_path(e))?;
+            let dtb = odt::flat::serialize(&tree);
+            writer.write_all(&dtb)?;
+        }
+        Format::DTS => {
+            // TODO:  How much should we process the input before printing here?
+            //   1. paste together included files
+            //   2. tree operations
+            //   3. assign phandles
+            //   4. evaluate expressions
+            //   5. discard labels
+            // Currently this prints after step 2.  Step 4 discards type information,
+            // so the output would be significantly worse than that of `dtc -O dts`.
+            let source = format!("/dts-v1/;\n\n{}/ {};", tree.labels_as_display(), tree);
+            // Try to reformat.
+            let output = match odt::parse::parse_untyped(&source) {
+                Ok(tree) => odt::print::format(tree),
+                Err(err) => {
+                    // TODO: just unwrap now that this works
+                    eprintln!("warning: failed to reformat internal DTS output:\n{err}");
+                    source
+                }
+            };
+            write!(writer, "{output}")?;
+        }
+    }
     if let Some(depfile) = args.out_dependency {
         let content = loader.write_depfile(&goal);
         std::fs::write(depfile, content)?;

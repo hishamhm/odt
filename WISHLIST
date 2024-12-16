@@ -1,13 +1,12 @@
 library features
 ----
-emulate dtc's tombstoning to assign the same phandles
+emulate dtc's containers in order to assign the same phandles
 pretty-printing: better whitespace heuristics
 pretty-printing: more opinionated formatting (e.g. lowercase hex, strip ULL suffixes)
 linting (e.g. unit addresses vs regs property)
-post-evaluation DTS output
 sorted output tree
-tree compare mode
 facility to query the source span of a property, or the insertion points at which a property could be added
+DTB input
 
 
 incompatible language features

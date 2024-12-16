@@ -1,5 +1,5 @@
 use crate::parse::Rule;
-use core::fmt::{Debug, Display, Formatter, Result};
+use core::fmt::{Debug, Display, Formatter};
 use core::ops::Range;
 use pest::error::{Error, ErrorVariant};
 use std::path::Path;
@@ -50,13 +50,13 @@ impl From<Error<Rule>> for SourceError {
 }
 
 impl Debug for SourceError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         Display::fmt(&self.pest_error, f)
     }
 }
 
 impl Display for SourceError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         Display::fmt(&self.pest_error, f)
     }
 }

@@ -3,4 +3,3 @@ improve reporting of warnings during evaluation
 improve reporting of UTF-8 errors in fs
 unittest coverage of warnings from integer truncation
 fix phandle-self reference
-deleting labels is quadratic; use a bimap

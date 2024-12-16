@@ -71,6 +71,11 @@ fn visit_includes<'a>(
         unimplemented!("{}", memres.err("unimplemented"));
     }
     out.extend(dts.top_def);
+    // TODO:  It may be useful to have a mode which prints the combined sources
+    // before tree operations.  Roughly:
+    //     for x in dts.top_def {
+    //         println!("{}", x.str());
+    //     }
     Ok(())
 }
 
