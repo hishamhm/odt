@@ -2,6 +2,7 @@
 
 use crate::error::SourceError;
 use crate::node::Node;
+use crate::nodepath::NodePath;
 use crate::parse::gen::*;
 use crate::parse::{SpanExt, TypedRuleExt};
 use core::str::CharIndices;
@@ -527,75 +528,6 @@ fn from_temp_tree(node: &TempNode) -> crate::Node {
     out
 }
 
-/// A portable subset of PathBuf needed for working with &{...} DTS path references.  The embedded
-/// string is normalized and always ends with a slash, simplifying `starts_with()` queries.
-#[derive(Clone, Eq, Hash, PartialEq)]
-pub struct NodePath(String);
-
-impl NodePath {
-    fn display(&self) -> &str {
-        if self.is_root() {
-            "/"
-        } else {
-            self.0.strip_suffix('/').unwrap()
-        }
-    }
-
-    fn is_root(&self) -> bool {
-        self.0.len() == 1
-    }
-
-    fn join(&self, suffix: &str) -> Self {
-        let mut r = self.clone();
-        r.push(suffix);
-        r
-    }
-
-    fn leaf(&self) -> &str {
-        self.0.rsplit_terminator('/').next().unwrap()
-    }
-
-    fn parent(&self) -> Self {
-        if self.is_root() {
-            return self.clone();
-        }
-        Self(self.0[..self.0.len() - 1 - self.leaf().len()].into())
-    }
-
-    fn push(&mut self, suffix: &str) {
-        for segment in suffix.split('/').filter(|s| !s.is_empty()) {
-            self.0.push_str(segment);
-            self.0.push('/');
-        }
-    }
-
-    fn root() -> Self {
-        Self("/".into())
-    }
-
-    fn segments(&self) -> impl Iterator<Item = &str> {
-        self.0.split_terminator('/').filter(|s| !s.is_empty())
-    }
-
-    fn starts_with(&self, prefix: &Self) -> bool {
-        self.0.starts_with(&prefix.0)
-    }
-}
-
-impl core::fmt::Debug for NodePath {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl core::fmt::Display for NodePath {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-pub type LabelMap = LinkedHashMap<String, NodePath>;
-
 #[derive(Clone)]
 pub enum TempValue<'a> {
     Ast(&'a PropValue<'a>),
@@ -649,6 +581,8 @@ impl<'a> core::fmt::Display for TempValue<'a> {
         }
     }
 }
+
+pub type LabelMap = LinkedHashMap<String, NodePath>;
 
 struct LabelResolver<'a, P>(&'a LabelMap, &'a Node<P>);
 

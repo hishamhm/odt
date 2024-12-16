@@ -3,6 +3,7 @@ pub mod eval;
 pub mod flat;
 pub mod fs;
 pub mod node;
+pub mod nodepath;
 pub mod parse;
 pub mod print;
 
