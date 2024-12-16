@@ -1,24 +1,25 @@
 //! Facilities for converting a parsed Devicetree Source file into a tree of nodes.
 
 use crate::error::SourceError;
+use crate::node::Node;
 use crate::parse::gen::*;
 use crate::parse::{SpanExt, TypedRuleExt};
-use crate::{Node, Property};
 use core::str::CharIndices;
-use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
 use std::borrow::Cow;
 
 /// Assign phandles, evaluate expressions, and convert to a `Node`-based tree.
 /// Call with the output of `merge()`.
-pub fn eval(mut tree: TempNode, node_labels: LabelMap) -> Result<Node, SourceError> {
+pub fn eval(mut tree: TempNode, node_labels: LabelMap) -> Result<crate::Node, SourceError> {
     assign_phandles(&mut tree, &node_labels)?;
     evaluate_expressions(&mut tree, &node_labels)?;
-    Ok(from_temp_tree(tree))
+    Ok(from_temp_tree(&tree))
 }
 
 // TODO: move tree merging to its own module.
 // TODO: clean up type names, pub methods
+
+type TempNode<'i> = Node<TempValue<'i>>;
 
 /// Transform the AST into a single tree of TempNodes.  This handles deletions of nodes and
 /// properties, property overrides, and label assignments.  Note that we may delete invalid
@@ -62,7 +63,7 @@ pub fn merge<'i>(dts: &Dts<'i>) -> Result<(TempNode<'i>, LabelMap), SourceError>
 fn assign_phandles(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), SourceError> {
     let mut need_phandles = LinkedHashSet::<NodePath>::new();
     visit_phandle_references(
-        LabelResolver(node_labels, root),
+        &LabelResolver(node_labels, root),
         root,
         &NodePath::root(),
         &mut need_phandles,
@@ -99,13 +100,13 @@ fn assign_phandles(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), So
     Ok(())
 }
 
-fn visit_phandle_references(
-    labels: LabelResolver,
+fn visit_phandle_references<P>(
+    labels: &LabelResolver<P>,
     node: &TempNode,
     path: &NodePath,
     need_phandles: &mut LinkedHashSet<NodePath>,
 ) -> Result<(), SourceError> {
-    for (_, tempvalue) in &node.properties {
+    for (_, tempvalue) in node.properties() {
         if let TempValue::Ast(propvalue) = tempvalue {
             for labeled_value in propvalue.labeled_value {
                 if let Value::Cells(cells) = labeled_value.value {
@@ -119,7 +120,7 @@ fn visit_phandle_references(
             }
         }
     }
-    for (name, tempnode) in &node.children {
+    for (name, tempnode) in node.children() {
         let child_path = path.join(name);
         visit_phandle_references(labels, tempnode, &child_path, need_phandles)?;
     }
@@ -127,10 +128,9 @@ fn visit_phandle_references(
 }
 
 fn evaluate_expressions(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), SourceError> {
-    // TODO:  Ownership is a challenge here.  We need the shape of the tree to evaluate
-    // label and phandle references, but we also need to mutate the propvalues.
-    // Could put each property's TempValue into a Cell<>?
-    // For now, just clone the tree.
+    // We need the shape of the tree to evaluate label and phandle references,
+    // but we also need to mutate the propvalues.
+    // TODO:  Change this to produce a new tree of a different type as its output.
     _evaluate_expressions(&root.clone(), node_labels, root)
 }
 
@@ -139,7 +139,7 @@ fn _evaluate_expressions(
     node_labels: &LabelMap,
     node: &mut TempNode,
 ) -> Result<(), SourceError> {
-    for (_, tempvalue) in &mut node.properties {
+    for (_, tempvalue) in node.properties_mut() {
         if let TempValue::Bytes(_) = tempvalue {
             continue;
         }
@@ -148,7 +148,7 @@ fn _evaluate_expressions(
         };
         *tempvalue = TempValue::Bytes(evaluate_propvalue(root, node_labels, propvalue)?);
     }
-    for (_, tempnode) in &mut node.children {
+    for (_, tempnode) in node.children_mut() {
         _evaluate_expressions(root, node_labels, tempnode)?;
     }
     Ok(())
@@ -181,8 +181,8 @@ fn evaluate_propvalue(
                         Cell::NodeReference(noderef) => {
                             let path = LabelResolver(node_labels, root).resolve(noderef)?;
                             let node = root.walk(path.segments()).unwrap();
-                            let phandle = &node.properties["phandle"];
-                            let TempValue::Bytes(bytes) = phandle else {
+                            let phandle = &node.get_property("phandle");
+                            let Some(TempValue::Bytes(bytes)) = phandle else {
                                 panic!("unevaluated phandle");
                             };
                             if bits != 32 {
@@ -508,24 +508,23 @@ fn eval_binary_op(left: u64, op: &str, right: u64) -> Result<u64, &'static str> 
     }
 }
 
-fn from_temp_tree(root: TempNode) -> Node {
-    let TempNode {
-        properties,
-        children,
-        ..
-    } = root;
-    let mut node = Node::default();
-    for (name, tempvalue) in properties {
+// TODO: Generic conversion method on node::Node?  It could avoid duplicating the string keys.
+fn from_temp_tree(node: &TempNode) -> crate::Node {
+    let mut out = crate::Node::default();
+    for (name, tempvalue) in node.properties() {
+        let name = name.clone();
         let TempValue::Bytes(bytes) = tempvalue else {
             panic!("unevaluated property");
         };
-        node.properties.push(Property { name, value: bytes });
+        let value = bytes.clone();
+        out.properties.push(crate::Property { name, value });
     }
-    for (name, tempnode) in children {
-        let child = from_temp_tree(tempnode);
-        node.children.push(Node { name, ..child });
+    for (name, child) in node.children() {
+        let name = name.clone();
+        let child = from_temp_tree(child);
+        out.children.push(crate::Node { name, ..child });
     }
-    node
+    out
 }
 
 /// A portable subset of PathBuf needed for working with &{...} DTS path references.  The embedded
@@ -651,112 +650,9 @@ impl<'a> core::fmt::Display for TempValue<'a> {
     }
 }
 
-// TODO: move TempValue<'a> to a type parameter of TempNode
+struct LabelResolver<'a, P>(&'a LabelMap, &'a Node<P>);
 
-/// An intermediate representation used to gather deletes and overrides.  We use
-/// an order-preserving container to stay closer to the input.
-///
-/// This doesn't match `dtc` in all cases.  Deleting a node and redefining it with
-/// the same name will move it to the end, but `dtc` remembers the original ordering.
-#[derive(Clone, Default)]
-pub struct TempNode<'a> {
-    labels: LinkedHashSet<String>,
-    properties: LinkedHashMap<String, TempValue<'a>>,
-    children: LinkedHashMap<String, TempNode<'a>>,
-}
-
-impl<'a> TempNode<'a> {
-    fn walk<'b>(&'a self, path: impl IntoIterator<Item = &'b str>) -> Option<&'a TempNode<'a>> {
-        let mut path = path.into_iter();
-        match path.next() {
-            None | Some("") => Some(self),
-            Some(segment) => self.children.get(segment)?.walk(path),
-        }
-    }
-
-    fn walk_mut<'b>(
-        &mut self,
-        path: impl IntoIterator<Item = &'b str>,
-    ) -> Option<&mut TempNode<'a>> {
-        let mut path = path.into_iter();
-        match path.next() {
-            None | Some("") => Some(self),
-            Some(segment) => self.children.get_mut(segment)?.walk_mut(path),
-        }
-    }
-
-    fn add_child(&mut self, name: &str) -> &mut TempNode<'a> {
-        // Avoid `Entry::or_insert_with()` because on LinkedHashMap that reorders existing entries.
-        match self.children.entry(name.into()) {
-            Entry::Vacant(entry) => entry.insert(TempNode::default()),
-            Entry::Occupied(entry) => entry.into_mut(),
-        }
-    }
-
-    fn get_property_or_insert_with(
-        &mut self,
-        name: &str,
-        default: impl FnOnce() -> TempValue<'a>,
-    ) -> &mut TempValue<'a> {
-        // Avoid `Entry::or_insert_with()` because on LinkedHashMap that reorders existing entries.
-        match self.properties.entry(name.into()) {
-            Entry::Vacant(entry) => entry.insert(default()),
-            Entry::Occupied(entry) => entry.into_mut(),
-        }
-    }
-
-    fn set_property(&mut self, name: &str, value: TempValue<'a>) {
-        self.properties.replace(name.into(), value);
-    }
-
-    fn remove_child(&mut self, name: &str) {
-        self.children.remove(name);
-    }
-
-    fn remove_property(&mut self, name: &str) {
-        self.properties.remove(name);
-    }
-
-    fn add_label(&mut self, name: &str) {
-        self.labels.replace(name.into());
-    }
-
-    pub fn labels_as_display(&self) -> LabelsDisplay {
-        LabelsDisplay(&self.labels)
-    }
-}
-
-impl<'a> core::fmt::Display for TempNode<'a> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        writeln!(f, "{{")?;
-        for (name, value) in &self.properties {
-            writeln!(f, "{name} = {value};")?;
-        }
-        if !self.properties.is_empty() && !self.children.is_empty() {
-            writeln!(f)?;
-        }
-        for (name, node) in &self.children {
-            writeln!(f, "{}{name} {node};", node.labels_as_display())?;
-        }
-        write!(f, "}}")
-    }
-}
-
-pub struct LabelsDisplay<'a>(&'a LinkedHashSet<String>);
-
-impl<'a> core::fmt::Display for LabelsDisplay<'a> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        for label in self.0 {
-            write!(f, "{label}: ")?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy)]
-struct LabelResolver<'a>(&'a LabelMap, &'a TempNode<'a>);
-
-impl LabelResolver<'_> {
+impl<P> LabelResolver<'_, P> {
     fn resolve(&self, noderef: &NodeReference) -> Result<NodePath, SourceError> {
         self.resolve_str(noderef.str())
             .ok_or_else(|| noderef.err("no such node"))
