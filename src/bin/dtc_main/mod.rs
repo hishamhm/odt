@@ -47,7 +47,7 @@ pub fn dtc_main(
     let loader = odt::fs::Loader::new(args.include);
     let input = &args.input_path;
     let dts = odt::parse::parse_with_includes(&loader, input).map_err(|e| loader.infer_path(e))?;
-    let (tree, node_labels) = odt::eval::merge(&dts).map_err(|e| loader.infer_path(e))?;
+    let (tree, node_labels) = odt::merge::merge(&dts).map_err(|e| loader.infer_path(e))?;
     let mut goal = String::from("-");
     let mut writer: Box<dyn Write> = if let Some(outfile) = args.out {
         goal = outfile.to_string_lossy().into_owned();
