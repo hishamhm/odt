@@ -70,15 +70,9 @@ pub fn dtc_main(
             // Currently this prints after step 2.  Step 4 discards type information,
             // so the output would be significantly worse than that of `dtc -O dts`.
             let source = format!("/dts-v1/;\n\n{}/ {};", tree.labels_as_display(), tree);
-            // Try to reformat.
-            let output = match odt::parse::parse_untyped(&source) {
-                Ok(tree) => odt::print::format(tree),
-                Err(err) => {
-                    // TODO: just unwrap now that this works
-                    eprintln!("warning: failed to reformat internal DTS output:\n{err}");
-                    source
-                }
-            };
+            // Reparse and pretty-print the output.
+            let tree = odt::parse::parse_untyped(&source).unwrap();
+            let output = odt::print::format(tree);
             write!(writer, "{output}")?;
         }
     }
