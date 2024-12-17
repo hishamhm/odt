@@ -1,0 +1,38 @@
+/dts-v1/;
+
+/ {
+  drv: drivers {
+    a: a {}; // phandle 7
+    b: b {}; // phandle 6
+    c: c {}; // phandle 4
+    d: d {}; // phandle 3
+    e: e {}; // no phandle assigned
+    f: f {}; // phandle 2
+    g: g {}; // phandle 1
+    h: h {}; // phandle 8
+    unlabeled {}; // phandle 5
+  };
+
+  visited_first_when_assigning_phandles {
+    absref = <&{/drivers/g}>;
+    labelref = <&{f}>;
+    path = &e; // does not trigger an assignment
+    ref = <&d>;
+    relref = <&{drv/c}>;
+    relref2 = <&{drv/unlabeled}>;
+    // phandle reference in a more complex propvalue
+    mixedref = "foo", /bits/ 32 <0 &b 0>, "bar";
+  };
+
+  check {
+    // test properties:
+    phandle_a = <7 &a>;
+    phandle_b = <6 &b>;
+    phandle_c = <4 &c>;
+    phandle_d = <3 &d>;
+    phandle_f = <2 &f>;
+    phandle_g = <1 &g>;
+    phandle_h = <8 &h>;
+    phandle_unlabeled = <5 &{/drivers/unlabeled}>;
+  };
+};

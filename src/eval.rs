@@ -493,6 +493,7 @@ fn test_eval() {
     for source in [
         include_str!("testdata/charlit.dts"),
         include_str!("testdata/expr.dts"),
+        include_str!("testdata/phandle.dts"),
         #[cfg(feature = "wrapping-arithmetic")]
         include_str!("testdata/random_expressions.dts"),
     ] {
@@ -500,7 +501,8 @@ fn test_eval() {
         let dts = crate::parse::parse_typed(source, &arena).unwrap();
         let (tree, node_labels) = crate::merge::merge(&dts).unwrap();
         let tree = eval(tree, node_labels).unwrap();
-        for p in tree.properties {
+        let check = tree.children.iter().find(|n| n.name == "check").unwrap_or(&tree);
+        for p in &check.properties {
             let name = &p.name;
             let v = &p.value;
             assert_eq!(
