@@ -8,7 +8,7 @@
 // implicitly requires UTF-8 (since it parses a Rust `str`).
 //
 // This grammar is not as strict as it could be.  For the sake of error
-// messages on bad input, some constraints are checked at the AST level.
+// messages on bad input, some constraints are checked after parsing.
 // For example, the exact set of characters in node/property names; `dtc`
 // checks only after the tree is built, so the following produces no errors:
 //   / {

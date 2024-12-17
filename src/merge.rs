@@ -7,8 +7,8 @@ use crate::parse::gen::*;
 use crate::parse::TypedRuleExt;
 use crate::SourceNode;
 
-/// Transform the AST into a single tree of SourceNode.  This handles deletions of nodes and
-/// properties, property overrides, and label assignments.  Note that we may delete invalid
+/// Transform the parse tree into a tree of SourceNodes indexed by path.  This handles deletions
+/// of nodes and properties, property overrides, and label assignments.  We may delete invalid
 /// constructs without evaluating them.  For example, we accept
 ///   / { x = <(0 / 0)>; };
 ///   / { /delete-property/ x; };
