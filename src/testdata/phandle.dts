@@ -2,15 +2,16 @@
 
 / {
   drv: drivers {
-    a: a {}; // phandle 7
-    b: b {}; // phandle 6
-    c: c {}; // phandle 4
-    d: d {}; // phandle 3
+    a: a {}; // phandle 9
+    b: b {}; // phandle 8
+    c: c {}; // phandle 6
+    d: d {}; // phandle 5
     e: e {}; // no phandle assigned
-    f: f {}; // phandle 2
-    g: g {}; // phandle 1
-    h: h {}; // phandle 8
-    unlabeled {}; // phandle 5
+    f: f {}; // phandle 4
+    g: g {}; // phandle 2
+    h: h {}; // phandle 10
+    self: self { phandle = <&self>; }; // phandle 1
+    unlabeled {}; // phandle 7
   };
 
   visited_first_when_assigning_phandles {
@@ -24,15 +25,21 @@
     mixedref = "foo", /bits/ 32 <0 &b 0>, "bar";
   };
 
+  visited_last_when_assign_phandles {
+    reserved {
+      phandle = <3>; // excluded from automatic assignment
+    };
+  };
+
   check {
     // test properties:
-    phandle_a = <7 &a>;
-    phandle_b = <6 &b>;
-    phandle_c = <4 &c>;
-    phandle_d = <3 &d>;
-    phandle_f = <2 &f>;
-    phandle_g = <1 &g>;
-    phandle_h = <8 &h>;
-    phandle_unlabeled = <5 &{/drivers/unlabeled}>;
+    phandle_a = <9 &a>;
+    phandle_b = <8 &b>;
+    phandle_c = <6 &c>;
+    phandle_d = <5 &d>;
+    phandle_f = <4 &f>;
+    phandle_g = <2 &g>;
+    phandle_h = <10 &h>;
+    phandle_unlabeled = <7 &{/drivers/unlabeled}>;
   };
 };

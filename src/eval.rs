@@ -91,6 +91,8 @@ fn visit_node_phandles<P>(
         let Some(propvalue) = prop.prop_value else {
             return Err(prop.err("phandle property is empty"));
         };
+        // We want to know whether `lookup_phandle` is called, but `evaluate_propvalue()`
+        // expects Fn, not FnMut.  Work around that with a Cell.
         let phandle_is_self_reference = std::cell::Cell::new(false);
         let lookup_phandle = |noderef: &NodeReference| {
             if &labels.resolve(noderef)? != path {
