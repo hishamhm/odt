@@ -2,4 +2,4 @@ check validity of node/property names after parsing
 improve reporting of warnings during evaluation
 improve reporting of UTF-8 errors in fs
 unittest coverage of warnings from integer truncation
-fix phandle-self reference
+fix phandle self-reference

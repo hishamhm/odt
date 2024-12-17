@@ -20,6 +20,9 @@ pub struct Loader {
 }
 
 impl Loader {
+    /// Magic pathname which will be loaded by reading from stdin.
+    pub const STDIN: &str = "<stdin>";
+
     pub fn new(search_path: Vec<PathBuf>) -> Self {
         Self {
             search_path,
@@ -68,7 +71,13 @@ impl Loader {
         // PathBuf is "StableDeref": moving it does not move the heap buffer.
         let key: &'a Path = unsafe { core::mem::transmute(entry.key().as_path()) };
         match entry.or_insert_with(|| {
-            let result = std::fs::read(key).ok();
+            let result = if key == Path::new(Self::STDIN) {
+                use std::io::Read;
+                let mut bytes = vec![];
+                std::io::stdin().read_to_end(&mut bytes).map(|_| bytes).ok()
+            } else {
+                std::fs::read(key).ok()
+            };
             if result.is_none() {
                 self.track_parent_of_missing(key);
             }
@@ -134,6 +143,7 @@ impl Loader {
         let escape = |s: &str| s.replace(' ', "\\ ");
         _ = write!(out, "{}:", escape(goal));
         for f in files {
+            // Arguably we should exclude "<stdin>", but dtc does not.
             _ = write!(out, " {}", escape(&f.to_string_lossy()));
         }
         // TODO:  Make this optional?  Unclear if we want the rigor.

@@ -33,7 +33,7 @@ pub fn parse_typed<'i>(source: &'i str, arena: &'i Bump) -> Result<&'i Dts<'i>, 
     Ok(dtsfile.dts)
 }
 
-pub fn parse_with_includes<'a>(loader: &'a Loader, path: &'_ Path) -> Result<Dts<'a>, SourceError> {
+pub fn parse_with_includes<'a>(loader: &'a Loader, path: &Path) -> Result<Dts<'a>, SourceError> {
     let Some((_, src)) = loader.read_utf8(path.into()) else {
         // TODO:  presumably there is some kind of filesystem error we could propagate
         return Err(SourceError::new_unattributed(format!(
@@ -53,9 +53,9 @@ pub fn parse_with_includes<'a>(loader: &'a Loader, path: &'_ Path) -> Result<Dts
 
 fn visit_includes<'a>(
     loader: &'a Loader,
-    path: &'_ Path,
-    dts: &'_ Dts<'a>,
-    out: &'_ mut Vec<&'a gen::TopDef<'a>>,
+    path: &Path,
+    dts: &Dts<'a>,
+    out: &mut Vec<&'a gen::TopDef<'a>>,
 ) -> Result<(), SourceError> {
     let dir = Some(path.parent().unwrap());
     for include in dts.include {

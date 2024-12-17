@@ -7,7 +7,7 @@ use std::path::PathBuf;
 struct Args {
     /// Input file
     #[arg(value_name = "input_path")]
-    input_path: PathBuf,
+    input_path: Option<PathBuf>,
 
     /// Input format
     #[arg(short = 'I', long, value_name = "format", default_value = "dts")]
@@ -43,9 +43,8 @@ pub fn dtc_main(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse_from(args);
     assert!(args.in_format == Format::Dts, "only DTS input is supported");
-    // TODO: optionally read from stdin -- won't work via loader
     let loader = odt::fs::Loader::new(args.include);
-    let input = &args.input_path;
+    let input = &args.input_path.unwrap_or(odt::fs::Loader::STDIN.into());
     let dts = odt::parse::parse_with_includes(&loader, input).map_err(|e| loader.infer_path(e))?;
     let (tree, node_labels) = odt::merge::merge(&dts).map_err(|e| loader.infer_path(e))?;
     let mut goal = String::from("-");
