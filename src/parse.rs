@@ -93,6 +93,7 @@ fn substr_range(outer: &str, inner: &str) -> Option<Range<usize>> {
 }
 
 pub trait SpanExt {
+    // TODO: Into<String> here is error-prone, because it allows forgetting `format!()`.
     fn err(&self, message: impl Into<String>) -> SourceError {
         SourceError::new(message.into(), self.span())
     }

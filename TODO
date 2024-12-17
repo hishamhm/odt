@@ -2,4 +2,5 @@ check validity of node/property names after parsing
 improve reporting of warnings during evaluation
 improve reporting of UTF-8 errors in fs
 unittest coverage of warnings from integer truncation
-fix phandle self-reference
+fail if input uses /omit-if-no-ref/ (instead of silently ignoring it)
+dtc has special behavior for the "name" property: equal to nodename => dropped, equal to basename => kept, otherwise => error

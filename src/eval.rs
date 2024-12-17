@@ -16,8 +16,8 @@ pub fn eval(tree: SourceNode, node_labels: LabelMap) -> Result<BinaryNode, Sourc
     let phandles = assign_phandles(&tree, &node_labels)?;
     let mut tree = evaluate_expressions(tree, &node_labels, &phandles)?;
     // poke assigned phandle values into the final tree
-    for (nodepath, phandle) in phandles {
-        tree.walk_mut(nodepath.segments())
+    for (path, phandle) in phandles {
+        tree.walk_mut(path.segments())
             .unwrap()
             .set_property("phandle", phandle.to_be_bytes().into());
     }
@@ -27,21 +27,27 @@ pub fn eval(tree: SourceNode, node_labels: LabelMap) -> Result<BinaryNode, Sourc
 type PhandleMap = LinkedHashMap<NodePath, u32>;
 
 fn assign_phandles(root: &SourceNode, node_labels: &LabelMap) -> Result<PhandleMap, SourceError> {
+    let labels = &LabelResolver(node_labels, root);
+    // Find the targets of all phandle references.
     let mut need_phandles = LinkedHashSet::<NodePath>::new();
-    visit_phandle_references(
-        &LabelResolver(node_labels, root),
-        root,
-        &NodePath::root(),
-        &mut need_phandles,
-    )?;
-    // TODO:  Walk the tree to find existing phandle properties.
-    // Each expression must have length 4, and may contain zero phandle references, or one,
-    // pointing to itself.  Scalar values are skipped during assignment.
-    let mut phandle_counter = 0u32;
-    let mut phandles = PhandleMap::new();
+    visit_phandle_references(labels, root, &NodePath::root(), &mut need_phandles)?;
+    // Find existing phandle properties.
+    let mut phandles = vec![];
+    visit_node_phandles(root, &NodePath::root(), labels, &mut phandles)?;
+    // TODO:  Report an error for duplicate phandles.
+    // `visit_node_phandles()` could collect into a set keyed on phandle value.
+    let taken: std::collections::HashSet<u32> = phandles.iter().map(|(_, v)| *v).collect();
+    let mut next_phandle = 1u32;
+    let mut phandles = PhandleMap::from_iter(phandles);
     for path in need_phandles {
-        phandle_counter += 1;
-        phandles.insert(path, phandle_counter);
+        if phandles.contains_key(&path) {
+            continue;
+        }
+        while taken.contains(&next_phandle) {
+            next_phandle += 1;
+        }
+        phandles.insert(path, next_phandle);
+        next_phandle += 1;
     }
     Ok(phandles)
 }
@@ -66,9 +72,55 @@ fn visit_phandle_references<P>(
             }
         }
     }
-    for (name, tempnode) in node.children() {
+    for (name, child) in node.children() {
         let child_path = path.join(name);
-        visit_phandle_references(labels, tempnode, &child_path, need_phandles)?;
+        visit_phandle_references(labels, child, &child_path, need_phandles)?;
+    }
+    Ok(())
+}
+
+fn visit_node_phandles<P>(
+    node: &SourceNode,
+    path: &NodePath,
+    labels: &LabelResolver<P>,
+    out: &mut Vec<(NodePath, u32)>,
+) -> Result<(), SourceError> {
+    if let Some(prop) = node.get_property("phandle") {
+        // Each expression must have length 4, and may contain zero phandle references, or one,
+        // pointing to itself.
+        let Some(propvalue) = prop.prop_value else {
+            return Err(prop.err("phandle property is empty"));
+        };
+        let phandle_is_self_reference = std::cell::Cell::new(false);
+        let lookup_phandle = |noderef: &NodeReference| {
+            if &labels.resolve(noderef)? != path {
+                Err(propvalue.err("phandle expression cannot reference another phandle"))
+            } else {
+                phandle_is_self_reference.set(true);
+                Ok(0)
+            }
+        };
+        let phandle = evaluate_propvalue(
+            propvalue,
+            |_| Err(propvalue.err("phandle expression cannot use a string node reference")),
+            lookup_phandle,
+        )?;
+        let n = phandle.len();
+        if n != 4 {
+            return Err(propvalue.err(format!("phandles must be u32, got {n} bytes")));
+        };
+        // `visit_phandle_references()` will find self-references, so we omit them.
+        if !phandle_is_self_reference.get() {
+            let phandle = u32::from_be_bytes(phandle.try_into().unwrap());
+            if phandle == 0 || phandle == 0xffff_ffff {
+                return Err(propvalue.err(format!("phandle has reserved value {phandle:#x}")));
+            }
+            out.push((path.clone(), phandle));
+        }
+    }
+    for (name, child) in node.children() {
+        let child_path = path.join(name);
+        visit_node_phandles(child, &child_path, labels, out)?;
     }
     Ok(())
 }
@@ -79,18 +131,21 @@ fn evaluate_expressions(
     phandles: &PhandleMap,
 ) -> Result<BinaryNode, SourceError> {
     let old = root.clone();
-    let labels = LabelResolver(node_labels, &old);
-    let eval = |value: &Prop| match value.prop_value {
+    let labels = &LabelResolver(node_labels, &old);
+    let lookup_label = |noderef: &NodeReference| labels.resolve(noderef);
+    let lookup_phandle =
+        |noderef: &NodeReference| Ok(*phandles.get(&labels.resolve(noderef)?).unwrap());
+    let eval = |prop: &Prop| match prop.prop_value {
         None => Ok(vec![]),
-        Some(propvalue) => evaluate_propvalue(propvalue, &labels, phandles),
+        Some(propvalue) => evaluate_propvalue(propvalue, lookup_label, lookup_phandle),
     };
     root.map_values(&eval)
 }
 
-fn evaluate_propvalue<P>(
+fn evaluate_propvalue(
     propvalue: &PropValue,
-    labels: &LabelResolver<P>,
-    phandles: &PhandleMap,
+    lookup_label: impl Fn(&NodeReference) -> Result<NodePath, SourceError>,
+    lookup_phandle: impl Fn(&NodeReference) -> Result<u32, SourceError>,
 ) -> Result<Vec<u8>, SourceError> {
     let mut r = vec![];
     for labeled_value in propvalue.labeled_value {
@@ -112,9 +167,7 @@ fn evaluate_propvalue<P>(
                     };
                     let n = match cell {
                         Cell::NodeReference(noderef) => {
-                            // Any errors should have been reported during `assign_phandles()`.
-                            let path = labels.resolve(noderef).unwrap();
-                            let phandle: u32 = *phandles.get(&path).unwrap();
+                            let phandle = lookup_phandle(noderef)?;
                             if bits != 32 {
                                 return Err(noderef.err("phandle references need /bits/ == 32"));
                             }
@@ -152,7 +205,7 @@ fn evaluate_propvalue<P>(
                 r.push(0);
             }
             Value::NodeReference(noderef) => {
-                let target = labels.resolve(noderef)?;
+                let target = lookup_label(noderef)?;
                 r.extend(target.display().as_bytes());
                 r.push(0);
             }

@@ -33,7 +33,7 @@ pub fn merge<'i>(dts: &Dts<'i>) -> Result<(SourceNode<'i>, LabelMap), SourceErro
                     add_label(&mut node_labels, label, node, &path)?;
                 }
                 let contents = topnode.node_body.node_contents;
-                fill_temp_node(&mut node_labels, node, &path, contents)?;
+                fill_source_node(&mut node_labels, node, &path, contents)?;
             }
             TopDef::TopDelNode(topdelnode) => {
                 let noderef = topdelnode.node_reference;
@@ -62,7 +62,7 @@ fn delete_node(node_labels: &mut LabelMap, root: &mut SourceNode, path: &NodePat
     parent.remove_child(child);
 }
 
-fn fill_temp_node<'a, 'b: 'a>(
+fn fill_source_node<'a, 'b: 'a>(
     node_labels: &mut LabelMap,
     node: &mut SourceNode<'a>,
     path: &NodePath,
@@ -80,7 +80,7 @@ fn fill_temp_node<'a, 'b: 'a>(
                     }
                 }
                 let contents = childnode.node_body.node_contents;
-                fill_temp_node(node_labels, child, &child_path, contents)?;
+                fill_source_node(node_labels, child, &child_path, contents)?;
             }
             ChildDef::DelNode(delnode) => {
                 let name = delnode.node_name.unescape_name();
