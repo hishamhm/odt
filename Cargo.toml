@@ -2,6 +2,9 @@
 name = "odt"
 version = "0.1.0"
 edition = "2021"
+description = "devicetree tools"
+repository = "https://github.com/a6f/odt"
+readme = "README.md"
 default-run = "dtc"
 
 [dependencies]
