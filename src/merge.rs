@@ -1,28 +1,20 @@
 //! Facilities for converting a parsed Devicetree Source file into a tree of nodes.
 
-use crate::label::{LabelMap, LabelResolver};
 use crate::error::SourceError;
-use crate::node::Node;
+use crate::label::{LabelMap, LabelResolver};
 use crate::nodepath::NodePath;
 use crate::parse::gen::*;
 use crate::parse::TypedRuleExt;
+use crate::SourceNode;
 
-type TempNode<'i> = Node<TempValue<'i>>;
-
-#[derive(Clone)]
-pub enum TempValue<'a> {
-    Ast(&'a PropValue<'a>),
-    Bytes(Vec<u8>),
-}
-
-/// Transform the AST into a single tree of TempNodes.  This handles deletions of nodes and
+/// Transform the AST into a single tree of SourceNode.  This handles deletions of nodes and
 /// properties, property overrides, and label assignments.  Note that we may delete invalid
 /// constructs without evaluating them.  For example, we accept
 ///   / { x = <(0 / 0)>; };
 ///   / { /delete-property/ x; };
 /// while `dtc` does not.
-pub fn merge<'i>(dts: &Dts<'i>) -> Result<(TempNode<'i>, LabelMap), SourceError> {
-    let mut root = TempNode::default();
+pub fn merge<'i>(dts: &Dts<'i>) -> Result<(SourceNode<'i>, LabelMap), SourceError> {
+    let mut root = SourceNode::default();
     let mut node_labels = LabelMap::new();
     if let Some(memres) = dts.memreserve.first() {
         unimplemented!("{}", memres.err("unimplemented"));
@@ -54,62 +46,14 @@ pub fn merge<'i>(dts: &Dts<'i>) -> Result<(TempNode<'i>, LabelMap), SourceError>
     Ok((root, node_labels))
 }
 
-impl Default for TempValue<'_> {
-    fn default() -> Self {
-        Self::Bytes(vec![])
-    }
-}
-
-impl<'a> core::fmt::Display for TempValue<'a> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            TempValue::Ast(ast) => {
-                // TODO:  This retains comments and whitespace from the input.
-                // May want the output a bit more normalized.
-                write!(f, "{}", ast.str())
-            }
-            TempValue::Bytes(bytes) => {
-                // TODO: C string detection
-                if bytes.len() % 4 == 0 {
-                    write!(f, "<")?;
-                    let mut first = true;
-                    for w in bytes.chunks_exact(4) {
-                        if first {
-                            first = false;
-                        } else {
-                            write!(f, " ")?;
-                        }
-                        // TODO: stabilization of slice::array_chunks would simplify this
-                        let n = u32::from_be_bytes(w.try_into().unwrap());
-                        write!(f, "{n:#x}")?;
-                    }
-                    write!(f, ">")
-                } else {
-                    write!(f, "[")?;
-                    let mut first = true;
-                    for b in bytes {
-                        if first {
-                            first = false;
-                        } else {
-                            write!(f, " ")?;
-                        }
-                        write!(f, "{b:02x}")?;
-                    }
-                    write!(f, "]")
-                }
-            }
-        }
-    }
-}
-
-fn delete_node(node_labels: &mut LabelMap, root: &mut TempNode, path: &NodePath) {
+fn delete_node(node_labels: &mut LabelMap, root: &mut SourceNode, path: &NodePath) {
     if root.walk(path.segments()).is_none() {
         panic!("deleting nonexistent node {path:?}");
     }
     if path.is_root() {
         // delete everything
         node_labels.clear();
-        *root = TempNode::default();
+        *root = SourceNode::default();
         return;
     }
     node_labels.retain(|_, p| !p.starts_with(path));
@@ -120,7 +64,7 @@ fn delete_node(node_labels: &mut LabelMap, root: &mut TempNode, path: &NodePath)
 
 fn fill_temp_node<'a, 'b: 'a>(
     node_labels: &mut LabelMap,
-    node: &mut TempNode<'a>,
+    node: &mut SourceNode<'a>,
     path: &NodePath,
     contents: &NodeContents<'b>,
 ) -> Result<(), SourceError> {
@@ -158,11 +102,7 @@ fn fill_temp_node<'a, 'b: 'a>(
                     // but likely mistaken to redefine a property within a scope.
                     return Err(prop.prop_name.err("duplicate property"));
                 }
-                let value = match prop.prop_value {
-                    Some(propvalue) => TempValue::Ast(propvalue),
-                    None => TempValue::Bytes(vec![]),
-                };
-                node.set_property(name, value);
+                node.set_property(name, prop);
             }
             PropDef::DelProp(delprop) => {
                 let name = delprop.prop_name.unescape_name();
@@ -195,7 +135,7 @@ impl<'a> UnescapeName<'a> for PropName<'a> {
 fn add_label(
     node_labels: &mut LabelMap,
     label: &Label,
-    node: &mut TempNode,
+    node: &mut SourceNode,
     path: &NodePath,
 ) -> Result<(), SourceError> {
     let s = label.str().strip_suffix(':').unwrap();

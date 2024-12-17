@@ -1,27 +1,32 @@
-//! Facilities for converting a parsed Devicetree Source file into a tree of nodes.
+//! Facilities for evaluating expressions and phandle references in a devicetree.
 
 use crate::error::SourceError;
 use crate::label::{LabelMap, LabelResolver};
-use crate::merge::TempValue;
-use crate::node::Node;
 use crate::nodepath::NodePath;
 use crate::parse::gen::*;
 use crate::parse::{SpanExt, TypedRuleExt};
+use crate::{BinaryNode, SourceNode};
 use core::str::CharIndices;
-use hashlink::LinkedHashSet;
+use hashlink::{LinkedHashMap, LinkedHashSet};
 use std::borrow::Cow;
 
-type TempNode<'i> = Node<TempValue<'i>>;
-
-/// Assign phandles, evaluate expressions, and convert to a `Node`-based tree.
+/// Assigns phandles and evaluates expressions.
 /// Call with the output of `crate::merge::merge()`.
-pub fn eval(mut tree: TempNode, node_labels: LabelMap) -> Result<crate::Node, SourceError> {
-    assign_phandles(&mut tree, &node_labels)?;
-    evaluate_expressions(&mut tree, &node_labels)?;
-    Ok(from_temp_tree(&tree))
+pub fn eval(tree: SourceNode, node_labels: LabelMap) -> Result<BinaryNode, SourceError> {
+    let phandles = assign_phandles(&tree, &node_labels)?;
+    let mut tree = evaluate_expressions(tree, &node_labels, &phandles)?;
+    // poke assigned phandle values into the final tree
+    for (nodepath, phandle) in phandles {
+        tree.walk_mut(nodepath.segments())
+            .unwrap()
+            .set_property("phandle", phandle.to_be_bytes().into());
+    }
+    Ok(tree)
 }
 
-fn assign_phandles(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), SourceError> {
+type PhandleMap = LinkedHashMap<NodePath, u32>;
+
+fn assign_phandles(root: &SourceNode, node_labels: &LabelMap) -> Result<PhandleMap, SourceError> {
     let mut need_phandles = LinkedHashSet::<NodePath>::new();
     visit_phandle_references(
         &LabelResolver(node_labels, root),
@@ -29,46 +34,26 @@ fn assign_phandles(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), So
         &NodePath::root(),
         &mut need_phandles,
     )?;
-
+    // TODO:  Walk the tree to find existing phandle properties.
+    // Each expression must have length 4, and may contain zero phandle references, or one,
+    // pointing to itself.  Scalar values are skipped during assignment.
     let mut phandle_counter = 0u32;
+    let mut phandles = PhandleMap::new();
     for path in need_phandles {
-        let node = root.walk_mut(path.segments()).unwrap();
-        let phandle = node.get_property_or_insert_with("phandle", || {
-            phandle_counter += 1;
-            TempValue::Bytes(phandle_counter.to_be_bytes().into())
-        });
-        match phandle {
-            TempValue::Bytes(bytes) => {
-                // This must be a phandle we previously assigned.
-                // TODO: it could be an empty property.  how do we get a span to report the error
-                // in that case?  maybe store the whole Prop node in TempValue?
-                assert_eq!(bytes.len(), 4);
-                let phv = u32::from_be_bytes(bytes[..].try_into().unwrap());
-                assert_ne!(phv, 0);
-                assert_ne!(phv, !0u32);
-            }
-            TempValue::Ast(ast) => {
-                // the expression here must have length 4, and may contain zero phandle references,
-                // or one, pointing to itself.
-                todo!("{}", ast.err("phandle self-reference unimplemented"));
-                // TODO: also repeat the byte checks above once it is evaluated.
-                // maybe move all this validation to a later pass.
-                // but do have to detect self-reference now to number correctly.
-            }
-        }
+        phandle_counter += 1;
+        phandles.insert(path, phandle_counter);
     }
-
-    Ok(())
+    Ok(phandles)
 }
 
 fn visit_phandle_references<P>(
     labels: &LabelResolver<P>,
-    node: &TempNode,
+    node: &SourceNode,
     path: &NodePath,
     need_phandles: &mut LinkedHashSet<NodePath>,
 ) -> Result<(), SourceError> {
-    for (_, tempvalue) in node.properties() {
-        if let TempValue::Ast(propvalue) = tempvalue {
+    for (_, prop) in node.properties() {
+        if let Some(propvalue) = prop.prop_value {
             for labeled_value in propvalue.labeled_value {
                 if let Value::Cells(cells) = labeled_value.value {
                     for label_or_cell in cells.label_or_cell {
@@ -88,37 +73,24 @@ fn visit_phandle_references<P>(
     Ok(())
 }
 
-fn evaluate_expressions(root: &mut TempNode, node_labels: &LabelMap) -> Result<(), SourceError> {
-    // We need the shape of the tree to evaluate label and phandle references,
-    // but we also need to mutate the propvalues.
-    // TODO:  Change this to produce a new tree of a different type as its output.
-    _evaluate_expressions(&root.clone(), node_labels, root)
+fn evaluate_expressions(
+    root: SourceNode,
+    node_labels: &LabelMap,
+    phandles: &PhandleMap,
+) -> Result<BinaryNode, SourceError> {
+    let old = root.clone();
+    let labels = LabelResolver(node_labels, &old);
+    let eval = |value: &Prop| match value.prop_value {
+        None => Ok(vec![]),
+        Some(propvalue) => evaluate_propvalue(propvalue, &labels, phandles),
+    };
+    root.map_values(&eval)
 }
 
-fn _evaluate_expressions(
-    root: &TempNode,
-    node_labels: &LabelMap,
-    node: &mut TempNode,
-) -> Result<(), SourceError> {
-    for (_, tempvalue) in node.properties_mut() {
-        if let TempValue::Bytes(_) = tempvalue {
-            continue;
-        }
-        let TempValue::Ast(propvalue) = core::mem::take(tempvalue) else {
-            unreachable!()
-        };
-        *tempvalue = TempValue::Bytes(evaluate_propvalue(root, node_labels, propvalue)?);
-    }
-    for (_, tempnode) in node.children_mut() {
-        _evaluate_expressions(root, node_labels, tempnode)?;
-    }
-    Ok(())
-}
-
-fn evaluate_propvalue(
-    root: &TempNode,
-    node_labels: &LabelMap,
+fn evaluate_propvalue<P>(
     propvalue: &PropValue,
+    labels: &LabelResolver<P>,
+    phandles: &PhandleMap,
 ) -> Result<Vec<u8>, SourceError> {
     let mut r = vec![];
     for labeled_value in propvalue.labeled_value {
@@ -140,18 +112,13 @@ fn evaluate_propvalue(
                     };
                     let n = match cell {
                         Cell::NodeReference(noderef) => {
-                            let path = LabelResolver(node_labels, root).resolve(noderef)?;
-                            let node = root.walk(path.segments()).unwrap();
-                            let phandle = &node.get_property("phandle");
-                            let Some(TempValue::Bytes(bytes)) = phandle else {
-                                panic!("unevaluated phandle");
-                            };
+                            // Any errors should have been reported during `assign_phandles()`.
+                            let path = labels.resolve(noderef).unwrap();
+                            let phandle: u32 = *phandles.get(&path).unwrap();
                             if bits != 32 {
                                 return Err(noderef.err("phandle references need /bits/ == 32"));
                             }
-                            assert_eq!(bytes.len(), 4);
-                            r.extend(bytes);
-                            continue;
+                            phandle as u64
                         }
                         Cell::ParenExpr(expr) => expr.eval()?,
                         Cell::IntLiteral(lit) => lit.eval()?,
@@ -174,7 +141,7 @@ fn evaluate_propvalue(
                         8 => r.push(n as u8),
                         16 => r.extend((n as u16).to_be_bytes()),
                         32 => r.extend((n as u32).to_be_bytes()),
-                        64 => r.extend((n as u64).to_be_bytes()),
+                        64 => r.extend(n.to_be_bytes()),
                         _ => unreachable!(),
                     }
                 }
@@ -185,7 +152,7 @@ fn evaluate_propvalue(
                 r.push(0);
             }
             Value::NodeReference(noderef) => {
-                let target = LabelResolver(node_labels, root).resolve(noderef)?;
+                let target = labels.resolve(noderef)?;
                 r.extend(target.display().as_bytes());
                 r.push(0);
             }
@@ -384,7 +351,6 @@ macro_rules! impl_binary_eval {
                     // It would be nice to match on the type of `op` rather than its text, but to
                     // get the compile-time safety of an exhaustive match, we'd need one match
                     // statement per precedence rule.
-                    // TODO: could use UNTYPED_RULE?
                     left = eval_binary_op(left?, op.str(), right).map_err(|msg| self.err(msg));
                 }
                 left
@@ -469,25 +435,6 @@ fn eval_binary_op(left: u64, op: &str, right: u64) -> Result<u64, &'static str> 
     }
 }
 
-// TODO: Generic conversion method on node::Node?  It could avoid duplicating the string keys.
-fn from_temp_tree(node: &TempNode) -> crate::Node {
-    let mut out = crate::Node::default();
-    for (name, tempvalue) in node.properties() {
-        let name = name.clone();
-        let TempValue::Bytes(bytes) = tempvalue else {
-            panic!("unevaluated property");
-        };
-        let value = bytes.clone();
-        out.properties.push(crate::Property { name, value });
-    }
-    for (name, child) in node.children() {
-        let name = name.clone();
-        let child = from_temp_tree(child);
-        out.children.push(crate::Node { name, ..child });
-    }
-    out
-}
-
 #[test]
 fn test_eval() {
     for source in [
@@ -501,17 +448,15 @@ fn test_eval() {
         let dts = crate::parse::parse_typed(source, &arena).unwrap();
         let (tree, node_labels) = crate::merge::merge(&dts).unwrap();
         let tree = eval(tree, node_labels).unwrap();
-        let check = tree.children.iter().find(|n| n.name == "check").unwrap_or(&tree);
-        for p in &check.properties {
-            let name = &p.name;
-            let v = &p.value;
+        let check = tree.get_child("check").unwrap_or(&tree);
+        for (name, value) in check.properties() {
             assert_eq!(
-                v.len(),
+                value.len(),
                 8,
                 "property {name} has wrong shape; should be <expected computed>"
             );
-            let left = u32::from_be_bytes(v[0..4].try_into().unwrap());
-            let right = u32::from_be_bytes(v[4..8].try_into().unwrap());
+            let left = u32::from_be_bytes(value[0..4].try_into().unwrap());
+            let right = u32::from_be_bytes(value[4..8].try_into().unwrap());
             assert_eq!(
                 left, right,
                 "property {name} did not evaluate to two equal values"

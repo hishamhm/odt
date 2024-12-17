@@ -9,17 +9,5 @@ pub mod nodepath;
 pub mod parse;
 pub mod print;
 
-// TODO: Return compiled output as these types, or as `node::Node<Vec<u8>>`?
-
-#[derive(Debug, Default)]
-pub struct Node {
-    pub name: String,
-    pub properties: Vec<Property>,
-    pub children: Vec<Node>,
-}
-
-#[derive(Debug, Default)]
-pub struct Property {
-    pub name: String,
-    pub value: Vec<u8>,
-}
+type SourceNode<'i> = node::Node<&'i parse::gen::Prop<'i>>;
+type BinaryNode = node::Node<Vec<u8>>;

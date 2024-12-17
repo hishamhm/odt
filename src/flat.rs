@@ -1,13 +1,13 @@
 //! Facilities for emitting the Flattened Device Tree (FDT) binary format,
 //! also known as a Devicetree Blob (DTB).
 
-use crate::Node;
+use crate::BinaryNode;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 /// Construct a DTB.
 /// Memory reservations are not supported.
-pub fn serialize(root: &Node) -> Vec<u8> {
+pub fn serialize(root: &BinaryNode) -> Vec<u8> {
     let mut out = Vec::<u8>::new();
     let mut strings = StringTable::default();
 
@@ -43,7 +43,7 @@ pub fn serialize(root: &Node) -> Vec<u8> {
 
     // structure block
     let off_dt_struct = out.tell();
-    serialize_inner(&mut out, &mut strings, root);
+    serialize_inner(&mut out, &mut strings, "", root);
     out.write_token(FdtToken::End);
     let size_dt_struct = out.tell() - off_dt_struct;
 
@@ -72,19 +72,19 @@ enum FdtToken {
     End = 9,
 }
 
-fn serialize_inner(out: &mut Vec<u8>, strings: &mut StringTable, root: &Node) {
+fn serialize_inner(out: &mut Vec<u8>, strings: &mut StringTable, name: &str, node: &BinaryNode) {
     out.write_token(FdtToken::BeginNode);
-    out.write_string(&root.name);
+    out.write_string(name);
     out.align();
-    for prop in &root.properties {
+    for (name, value) in node.properties() {
         out.write_token(FdtToken::Prop);
-        out.write_u32(prop.value.len().try_into().unwrap());
-        out.write_u32(strings.intern(&prop.name));
-        out.extend_from_slice(&prop.value);
+        out.write_u32(value.len().try_into().unwrap());
+        out.write_u32(strings.intern(name));
+        out.extend_from_slice(value);
         out.align();
     }
-    for node in &root.children {
-        serialize_inner(out, strings, node);
+    for (name, child) in node.children() {
+        serialize_inner(out, strings, name, child);
     }
     out.write_token(FdtToken::EndNode);
 }

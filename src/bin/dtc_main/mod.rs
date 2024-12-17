@@ -33,16 +33,16 @@ struct Args {
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
 enum Format {
     /// devicetree source
-    DTS,
+    Dts,
     /// devicetree blob
-    DTB,
+    Dtb,
 }
 
 pub fn dtc_main(
     args: impl IntoIterator<Item = std::ffi::OsString>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse_from(args);
-    assert!(args.in_format == Format::DTS, "only DTS input is supported");
+    assert!(args.in_format == Format::Dts, "only DTS input is supported");
     // TODO: optionally read from stdin -- won't work via loader
     let loader = odt::fs::Loader::new(args.include);
     let input = &args.input_path;
@@ -56,12 +56,12 @@ pub fn dtc_main(
         Box::new(BufWriter::new(std::io::stdout()))
     };
     match args.out_format {
-        Format::DTB => {
+        Format::Dtb => {
             let tree = odt::eval::eval(tree, node_labels).map_err(|e| loader.infer_path(e))?;
             let dtb = odt::flat::serialize(&tree);
             writer.write_all(&dtb)?;
         }
-        Format::DTS => {
+        Format::Dts => {
             // TODO:  How much should we process the input before printing here?
             //   1. paste together included files
             //   2. tree operations
