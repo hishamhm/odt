@@ -63,6 +63,6 @@ impl Debug for NodePath {
 
 impl Display for NodePath {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        Display::fmt(&self.0, f)
+        Display::fmt(self.display(), f)
     }
 }
