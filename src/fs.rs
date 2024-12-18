@@ -3,6 +3,7 @@
 use crate::error::SourceError;
 use bumpalo::Bump;
 use core::fmt::Write;
+use core::ops::Range;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -120,16 +121,20 @@ impl Loader {
         }
     }
 
-    /// Produce a representation of the files accessed, in the format of a ninja depfile
-    /// or the output of `cpp -MD` or `makedepend`.
-    pub fn write_depfile(&self, goal: &str) -> String {
-        let mut files: Vec<_> = self
-            .file_contents
+    /// Files successfully read.
+    pub fn positive_deps(&self) -> Vec<PathBuf> {
+        self.file_contents
             .lock()
             .unwrap()
             .iter()
             .filter_map(|(path, content)| content.is_some().then_some(path.clone()))
-            .collect();
+            .collect()
+    }
+
+    /// Produce a representation of the files accessed, in the format of a ninja depfile
+    /// or the output of `cpp -MD` or `makedepend`.
+    pub fn write_depfile(&self, goal: &str) -> String {
+        let mut files = self.positive_deps();
         files.sort();
         let mut dirs: Vec<_> = self
             .parents_of_missing
@@ -154,17 +159,24 @@ impl Loader {
         out
     }
 
-    pub fn infer_path(&self, err: SourceError) -> SourceError {
-        if err.path().is_some() {
-            return err;
-        }
+    pub fn path_of_buffer(&self, mem: Range<*const u8>) -> Option<PathBuf> {
         for (path, bytes) in self.file_contents.lock().unwrap().iter() {
             if let Some(bytes) = bytes {
-                if bytes.as_ptr_range() == err.buffer {
-                    return err.with_path(path);
+                if bytes.as_ptr_range() == mem {
+                    return Some(path.clone());
                 }
             }
         }
-        err.with_path(Path::new("<unknown>"))
+        None
+    }
+
+    pub fn with_path(&self, err: SourceError) -> SourceError {
+        if err.path().is_some() {
+            return err;
+        }
+        let path = self
+            .path_of_buffer(err.buffer.clone())
+            .unwrap_or("<unknown>".into());
+        err.with_path(&path)
     }
 }
