@@ -1,9 +1,121 @@
-//! Facilities for emitting the Flattened Device Tree (FDT) binary format,
+//! Facilities for working with the Flattened Device Tree (FDT) binary format,
 //! also known as a Devicetree Blob (DTB).
 
 use crate::BinaryNode;
+use core::fmt::{Debug, Display, Formatter};
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+
+const FDT_HEADER_SIZE: usize = 40;
+const FDT_MAGIC: u32 = 0xd00dfeed;
+
+#[derive(Copy, Clone, Eq, PartialEq, FromPrimitive)]
+enum FdtToken {
+    BeginNode = 1,
+    EndNode = 2,
+    Prop = 3,
+    #[allow(dead_code)]
+    Nop = 4,
+    End = 9,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum DeserializeError {
+    Truncated,
+    Other(&'static str),
+}
+
+impl From<&'static str> for DeserializeError {
+    fn from(message: &'static str) -> DeserializeError {
+        DeserializeError::Other(message)
+    }
+}
+
+impl Display for DeserializeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        Debug::fmt(&self, f)
+    }
+}
+
+impl core::error::Error for DeserializeError {}
+
+/// Parse a DTB.
+pub fn deserialize(blob: &[u8]) -> Result<BinaryNode, DeserializeError> {
+    let mut header = blob;
+    let magic = header.read_u32()?;
+    let totalsize = header.read_u32()? as usize;
+    let off_dt_struct = header.read_u32()? as usize;
+    let off_dt_strings = header.read_u32()? as usize;
+    let _off_dt_rsvmap = header.read_u32()? as usize;
+    let version = header.read_u32()?;
+    let last_comp_version = header.read_u32()?;
+    let _boot_cpuid_phys = header.read_u32()?;
+    let size_dt_strings = header.read_u32()? as usize;
+    let size_dt_struct = header.read_u32()? as usize;
+    if magic != FDT_MAGIC {
+        return Err("bad magic".into());
+    }
+    if totalsize > blob.len() {
+        return Err("truncated".into());
+    }
+    if version < 17 || last_comp_version > 17 {
+        return Err("unsupported version".into());
+    }
+    if off_dt_struct > totalsize || off_dt_strings > totalsize {
+        return Err("invalid header".into());
+    }
+    if size_dt_struct > totalsize - off_dt_struct || size_dt_strings > totalsize - off_dt_strings {
+        return Err("invalid header".into());
+    }
+    let mut dt_struct = &blob[off_dt_struct..off_dt_struct + size_dt_struct];
+    let dt_strings = &blob[off_dt_strings..off_dt_strings + size_dt_strings];
+
+    let node = match dt_struct.read_token()? {
+        FdtToken::BeginNode => {
+            // discard the name of the root node
+            dt_struct.read_cstr()?;
+            dt_struct.realign_to(blob)?;
+            deserialize_node(&mut dt_struct, dt_strings)?
+        }
+        FdtToken::End => {
+            // Given "/delete-node/ &{/};", `dtc` will produce a DTB with no root node.
+            // Treat that as an empty root node.
+            return Ok(BinaryNode::default());
+        }
+        _ => return Err("unexpected start token".into()),
+    };
+    if dt_struct.read_token()? != FdtToken::End {
+        return Err("missing end token".into());
+    }
+    Ok(node)
+}
+
+fn deserialize_node(stream: &mut &[u8], strtab: &[u8]) -> Result<BinaryNode, DeserializeError> {
+    let mut node = BinaryNode::default();
+    let frame: &[u8] = stream;
+    loop {
+        match stream.read_token()? {
+            FdtToken::BeginNode => {
+                let name = stream.read_cstr()?;
+                stream.realign_to(frame)?;
+                *node.add_child(&name) = deserialize_node(stream, strtab)?;
+            }
+            FdtToken::EndNode => return Ok(node),
+            FdtToken::Prop => {
+                let value_len = stream.read_u32()?;
+                let name_offset = stream.read_u32()?;
+                let value = stream.read_bytes(value_len as usize)?;
+                let name = strtab.pread_cstr(name_offset as usize)?;
+                stream.realign_to(frame)?;
+                node.set_property(&name, value);
+            }
+            FdtToken::Nop => (),
+            FdtToken::End => return Err("unexpected end token".into()),
+        }
+    }
+}
 
 /// Construct a DTB.
 /// Memory reservations are not supported.
@@ -25,12 +137,11 @@ pub fn serialize(root: &BinaryNode) -> Vec<u8> {
         uint32_t size_dt_struct;
     };
     */
-    const FDT_HEADER_SIZE: u32 = 40;
-    out.write_u32(0xd00dfeed);
+    out.write_u32(FDT_MAGIC);
     out.write_u32(0); // totalsize not yet known
     out.write_u32(0); // off_dt_struct not yet known
     out.write_u32(0); // off_dt_strings not yet known
-    out.write_u32(FDT_HEADER_SIZE);
+    out.write_u32(FDT_HEADER_SIZE as u32);
     out.write_u32(17);
     out.write_u32(16);
     out.write_u32(0);
@@ -60,16 +171,6 @@ pub fn serialize(root: &BinaryNode) -> Vec<u8> {
     out.pwrite_u32(36, size_dt_struct);
 
     out
-}
-
-#[derive(Copy, Clone)]
-enum FdtToken {
-    BeginNode = 1,
-    EndNode = 2,
-    Prop = 3,
-    #[allow(dead_code)]
-    Nop = 4,
-    End = 9,
 }
 
 fn serialize_inner(out: &mut Vec<u8>, strings: &mut StringTable, name: &str, node: &BinaryNode) {
@@ -153,5 +254,69 @@ impl StringTable {
     }
     fn serialize(&self, out: &mut Vec<u8>) {
         out.extend_from_slice(&self.block);
+    }
+}
+
+trait FdtReader {
+    fn read_u32(&mut self) -> Result<u32, DeserializeError>;
+    fn read_token(&mut self) -> Result<FdtToken, DeserializeError>;
+    fn read_bytes(&mut self, len: usize) -> Result<Vec<u8>, DeserializeError>;
+    fn read_cstr(&mut self) -> Result<String, DeserializeError>;
+    fn pread_cstr(&self, pos: usize) -> Result<String, DeserializeError>;
+    fn realign_to(&mut self, outer: &[u8]) -> Result<(), DeserializeError>;
+}
+
+impl FdtReader for &[u8] {
+    fn read_u32(&mut self) -> Result<u32, DeserializeError> {
+        if let Some((first, rest)) = self.split_first_chunk::<4>() {
+            *self = rest;
+            Ok(u32::from_be_bytes(*first))
+        } else {
+            Err(DeserializeError::Truncated)
+        }
+    }
+
+    fn read_token(&mut self) -> Result<FdtToken, DeserializeError> {
+        FdtToken::from_u32(self.read_u32()?).ok_or("invalid FDT token".into())
+    }
+
+    fn read_bytes(&mut self, len: usize) -> Result<Vec<u8>, DeserializeError> {
+        if let Some((first, rest)) = self.split_at_checked(len) {
+            *self = rest;
+            Ok(first.into())
+        } else {
+            Err(DeserializeError::Truncated)
+        }
+    }
+
+    fn read_cstr(&mut self) -> Result<String, DeserializeError> {
+        let cstr = core::ffi::CStr::from_bytes_until_nul(self)
+            .map_err(|_| DeserializeError::from("string not terminated"))?;
+        let s = cstr
+            .to_str()
+            .map_err(|_| DeserializeError::from("invalid UTF-8"))?;
+        *self = &self[s.len() + 1..];
+        Ok(s.into())
+    }
+
+    // TODO:  This could return a &str, but appeasing the borrow checker is a chore.
+    fn pread_cstr(&self, pos: usize) -> Result<String, DeserializeError> {
+        let Some(mut suffix) = self.get(pos..) else {
+            return Err(DeserializeError::Truncated);
+        };
+        suffix.read_cstr()
+    }
+
+    fn realign_to(&mut self, outer: &[u8]) -> Result<(), DeserializeError> {
+        let outer = outer.as_ptr_range();
+        let outer = outer.start as usize..outer.end as usize;
+        let inner = self.as_ptr_range();
+        let inner = inner.start as usize..inner.end as usize;
+        assert!(outer.contains(&inner.start));
+        assert!(outer.contains(&inner.end) || outer.end == inner.end);
+        let offset = inner.start - outer.start;
+        let aligned = offset.next_multiple_of(4);
+        self.read_bytes(aligned - offset)?;
+        Ok(())
     }
 }

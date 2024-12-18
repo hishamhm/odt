@@ -42,18 +42,47 @@ pub fn dtc_main(
     args: impl IntoIterator<Item = std::ffi::OsString>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse_from(args);
-    assert!(args.in_format == Format::Dts, "only DTS input is supported");
+
+    match args.in_format {
+        Format::Dtb => dtb_input(args),
+        Format::Dts => dts_input(args),
+    }
+}
+
+fn dtb_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let loader = odt::fs::Loader::new(args.include);
-    let input = &args.input_path.unwrap_or(odt::fs::Loader::STDIN.into());
-    let dts = odt::parse::parse_with_includes(&loader, input).map_err(|e| loader.infer_path(e))?;
-    let (tree, node_labels) = odt::merge::merge(&dts).map_err(|e| loader.infer_path(e))?;
-    let mut goal = String::from("-");
-    let mut writer: Box<dyn Write> = if let Some(outfile) = args.out {
-        goal = outfile.to_string_lossy().into_owned();
-        Box::new(BufWriter::new(std::fs::File::create(outfile)?))
-    } else {
-        Box::new(BufWriter::new(std::io::stdout()))
+    let input = args.input_path.unwrap_or(odt::fs::Loader::STDIN.into());
+    let Some((_path, data)) = loader.read(input.clone()) else {
+        panic!("can't read {input:?}");
     };
+    let tree = odt::flat::deserialize(data)?;
+    let (goal, mut writer) = open_output(args.out)?;
+    match args.out_format {
+        Format::Dtb => {
+            let dtb = odt::flat::serialize(&tree);
+            writer.write_all(&dtb)?;
+        }
+        Format::Dts => {
+            let source = format!("/dts-v1/;/{tree};");
+            // Reparse and pretty-print the output.
+            let tree = odt::parse::parse_untyped(&source).unwrap();
+            let output = odt::print::format(tree);
+            write!(writer, "{output}")?;
+        }
+    }
+    if let Some(depfile) = args.out_dependency {
+        let content = loader.write_depfile(&goal);
+        std::fs::write(depfile, content)?;
+    }
+    Ok(())
+}
+
+fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    let loader = odt::fs::Loader::new(args.include);
+    let input = args.input_path.unwrap_or(odt::fs::Loader::STDIN.into());
+    let dts = odt::parse::parse_with_includes(&loader, &input).map_err(|e| loader.infer_path(e))?;
+    let (tree, node_labels) = odt::merge::merge(&dts).map_err(|e| loader.infer_path(e))?;
+    let (goal, mut writer) = open_output(args.out)?;
     match args.out_format {
         Format::Dtb => {
             let tree = odt::eval::eval(tree, node_labels).map_err(|e| loader.infer_path(e))?;
@@ -69,7 +98,7 @@ pub fn dtc_main(
             //   5. discard labels
             // Currently this prints after step 2.  Step 4 discards type information,
             // so the output would be significantly worse than that of `dtc -O dts`.
-            let source = format!("/dts-v1/;\n\n{}/ {};", tree.labels_as_display(), tree);
+            let source = format!("/dts-v1/;{}/{tree};", tree.labels_as_display());
             // Reparse and pretty-print the output.
             let tree = odt::parse::parse_untyped(&source).unwrap();
             let output = odt::print::format(tree);
@@ -81,4 +110,16 @@ pub fn dtc_main(
         std::fs::write(depfile, content)?;
     }
     Ok(())
+}
+
+fn open_output(
+    out: Option<PathBuf>,
+) -> Result<(String, Box<dyn Write>), Box<dyn std::error::Error>> {
+    Ok(match out {
+        Some(path) => (
+            (path.to_string_lossy().into_owned()),
+            Box::new(BufWriter::new(std::fs::File::create(path)?)),
+        ),
+        None => ("-".into(), Box::new(BufWriter::new(std::io::stdout()))),
+    })
 }

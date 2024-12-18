@@ -1,3 +1,5 @@
+use core::fmt::{Debug, Display, Formatter};
+
 /// A portable subset of PathBuf needed for working with &{...} DTS path references.  The embedded
 /// string is normalized and always ends with a slash, simplifying `starts_with()` queries.
 #[derive(Clone, Eq, Hash, PartialEq)]
@@ -53,14 +55,14 @@ impl NodePath {
     }
 }
 
-impl core::fmt::Debug for NodePath {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.0.fmt(f)
+impl Debug for NodePath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        Debug::fmt(&self.0, f)
     }
 }
 
-impl core::fmt::Display for NodePath {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.0.fmt(f)
+impl Display for NodePath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        Display::fmt(&self.0, f)
     }
 }

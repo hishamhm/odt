@@ -1,4 +1,4 @@
-use core::fmt::Display;
+use core::fmt::{Display, Formatter, Write};
 use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
 
@@ -129,8 +129,60 @@ impl OptionDisplay for &crate::parse::gen::Prop<'_> {
     }
 }
 
+impl OptionDisplay for Vec<u8> {
+    fn fmt_opt(&self) -> Option<String> {
+        if self.is_empty() {
+            return None;
+        }
+        let mut f = String::new();
+        // Formatting here is sloppy because we pass the output through the pretty-printer.
+        if let Some(s) = guess_c_strings(self) {
+            for (i, w) in s.split_terminator('\0').enumerate() {
+                if i > 0 {
+                    _ = write!(f, ", ");
+                }
+                _ = write!(f, "\"{w}\"");
+            }
+        } else if self.len() % 4 == 0 {
+            _ = write!(f, "<");
+            for w in self.chunks_exact(4) {
+                // stabilization of slice::array_chunks would simplify this
+                let n = u32::from_be_bytes(w.try_into().unwrap());
+                _ = write!(f, " {n:#04x}");
+            }
+            _ = write!(f, ">")
+        } else {
+            _ = write!(f, "[");
+            for b in self {
+                _ = write!(f, " {b:02x}");
+            }
+            _ = write!(f, "]");
+        }
+        Some(f)
+    }
+}
+
+fn guess_c_strings(s: &[u8]) -> Option<&str> {
+    if s.last() != Some(&0) {
+        return None;
+    }
+    let mut nuls = 0;
+    for c in s {
+        match c {
+            0 => nuls += 1,
+            b' '..b'~' => (),
+            _ => return None,
+        }
+    }
+    if nuls == 1 || nuls <= s.len() / 2 {
+        Some(core::str::from_utf8(s).unwrap())
+    } else {
+        None
+    }
+}
+
 impl<P: OptionDisplay> Display for Node<P> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "{{")?;
         for (name, value) in &self.properties {
             if let Some(value) = value.fmt_opt() {
@@ -152,7 +204,7 @@ impl<P: OptionDisplay> Display for Node<P> {
 pub struct LabelsDisplay<'a>(&'a LinkedHashSet<String>);
 
 impl Display for LabelsDisplay<'_> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         for label in self.0 {
             write!(f, "{label}: ")?;
         }
