@@ -2,9 +2,9 @@
 
 use crate::error::SourceError;
 use crate::label::{LabelMap, LabelResolver};
-use crate::nodepath::NodePath;
 use crate::parse::gen::*;
 use crate::parse::TypedRuleExt;
+use crate::path::NodePath;
 use crate::SourceNode;
 
 /// Transform the parse tree into a tree of SourceNodes indexed by path.  This handles deletions

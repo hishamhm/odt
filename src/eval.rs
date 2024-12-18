@@ -2,9 +2,9 @@
 
 use crate::error::SourceError;
 use crate::label::{LabelMap, LabelResolver};
-use crate::nodepath::NodePath;
 use crate::parse::gen::*;
 use crate::parse::{SpanExt, TypedRuleExt};
+use crate::path::NodePath;
 use crate::{BinaryNode, SourceNode};
 use core::str::CharIndices;
 use hashlink::{LinkedHashMap, LinkedHashSet};

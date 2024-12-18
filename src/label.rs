@@ -1,8 +1,8 @@
 use crate::error::SourceError;
 use crate::node::Node;
-use crate::nodepath::NodePath;
 use crate::parse::gen::NodeReference;
 use crate::parse::TypedRuleExt;
+use crate::path::NodePath;
 use hashlink::LinkedHashMap;
 
 pub type LabelMap = LinkedHashMap<String, NodePath>;
