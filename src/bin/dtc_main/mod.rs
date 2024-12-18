@@ -83,7 +83,7 @@ fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let loader = odt::fs::Loader::new(args.include);
     let input = args.input_path.unwrap_or(odt::fs::Loader::STDIN.into());
     let dts = odt::parse::parse_with_includes(&loader, &input).map_err(|e| loader.with_path(e))?;
-    let (tree, node_labels) = odt::merge::merge(&dts).map_err(|e| loader.with_path(e))?;
+    let (tree, node_labels, _) = odt::merge::merge(&dts).map_err(|e| loader.with_path(e))?;
     let (goal, mut writer) = open_output(args.out)?;
     match args.out_format {
         Format::Dtb => {

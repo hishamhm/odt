@@ -6,6 +6,9 @@ use crate::parse::gen::*;
 use crate::parse::TypedRuleExt;
 use crate::path::NodePath;
 use crate::SourceNode;
+use hashlink::LinkedHashMap;
+
+pub type NodeDecls<'i> = LinkedHashMap<NodePath, &'i NodeBody<'i>>;
 
 /// Transform the parse tree into a tree of SourceNodes indexed by path.  This handles deletions
 /// of nodes and properties, property overrides, and label assignments.  We may delete invalid
@@ -13,9 +16,10 @@ use crate::SourceNode;
 ///   / { x = <(0 / 0)>; };
 ///   / { /delete-property/ x; };
 /// while `dtc` does not.
-pub fn merge<'i>(dts: &Dts<'i>) -> Result<(SourceNode<'i>, LabelMap), SourceError> {
+pub fn merge<'i>(dts: &Dts<'i>) -> Result<(SourceNode<'i>, LabelMap, NodeDecls<'i>), SourceError> {
     let mut root = SourceNode::default();
     let mut node_labels = LabelMap::new();
+    let mut node_decls = NodeDecls::new();
     if let Some(memres) = dts.memreserve.first() {
         unimplemented!("{}", memres.err("unimplemented"));
     }
@@ -32,18 +36,19 @@ pub fn merge<'i>(dts: &Dts<'i>) -> Result<(SourceNode<'i>, LabelMap), SourceErro
                 for label in topnode.label {
                     add_label(&mut node_labels, label, node, &path)?;
                 }
-                let contents = topnode.node_body.node_contents;
-                fill_source_node(&mut node_labels, node, &path, contents)?;
+                let body = topnode.node_body;
+                fill_source_node(&mut node_labels, &mut node_decls, node, &path, body)?;
             }
             TopDef::TopDelNode(topdelnode) => {
                 let noderef = topdelnode.node_reference;
-                let target = LabelResolver(&node_labels, &root).resolve(noderef)?;
-                delete_node(&mut node_labels, &mut root, &target);
+                let path = LabelResolver(&node_labels, &root).resolve(noderef)?;
+                node_decls.remove(&path);
+                delete_node(&mut node_labels, &mut root, &path);
             }
             TopDef::TopOmitNode(_) => (), // ignored
         }
     }
-    Ok((root, node_labels))
+    Ok((root, node_labels, node_decls))
 }
 
 fn delete_node(node_labels: &mut LabelMap, root: &mut SourceNode, path: &NodePath) {
@@ -62,14 +67,16 @@ fn delete_node(node_labels: &mut LabelMap, root: &mut SourceNode, path: &NodePat
     parent.remove_child(child);
 }
 
-fn fill_source_node<'a, 'b: 'a>(
+fn fill_source_node<'o, 'i: 'o>(
     node_labels: &mut LabelMap,
-    node: &mut SourceNode<'a>,
+    node_decls: &mut NodeDecls<'o>,
+    node: &mut SourceNode<'o>,
     path: &NodePath,
-    contents: &NodeContents<'b>,
+    body: &'i NodeBody<'i>,
 ) -> Result<(), SourceError> {
+    node_decls.replace(path.clone(), body);
     let mut names_used = std::collections::HashSet::new();
-    for prop_def in contents.prop_def {
+    for prop_def in body.node_contents.prop_def {
         match prop_def {
             PropDef::Prop(prop) => {
                 let name = prop.prop_name.unescape_name();
@@ -88,7 +95,7 @@ fn fill_source_node<'a, 'b: 'a>(
             }
         }
     }
-    for child_def in contents.child_def {
+    for child_def in body.node_contents.child_def {
         match child_def {
             ChildDef::ChildNode(childnode) => {
                 let name = childnode.node_name.unescape_name();
@@ -99,13 +106,14 @@ fn fill_source_node<'a, 'b: 'a>(
                         add_label(node_labels, label, child, &child_path)?;
                     }
                 }
-                let contents = childnode.node_body.node_contents;
-                fill_source_node(node_labels, child, &child_path, contents)?;
+                let body = childnode.node_body;
+                fill_source_node(node_labels, node_decls, child, &child_path, body)?;
             }
             ChildDef::DelNode(delnode) => {
                 let name = delnode.node_name.unescape_name();
-                node.remove_child(name);
                 let childpath = path.join(name);
+                node_decls.remove(&childpath);
+                node.remove_child(name);
                 // TODO:  This is potentially quadratic.  Could use the labels in the removed node.
                 node_labels.retain(|_, p| !p.starts_with(&childpath));
             }
