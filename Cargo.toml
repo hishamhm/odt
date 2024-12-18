@@ -20,15 +20,6 @@ num-traits = "0.2.19"
 [features]
 wrapping-arithmetic = []
 
-[[bin]]
-name = "cargo-dtc"
-
-[[bin]]
-name = "dtc"
-
-[[bin]]
-name = "dtsfmt"
-
 [dev-dependencies]
 pretty_assertions = "1.4.1"
 

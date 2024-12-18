@@ -1,3 +1,5 @@
+// This is in a mod.rs so cargo's "autobins" feature doesn't find it.
+
 use clap::Parser as _;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
