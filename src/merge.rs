@@ -68,6 +68,26 @@ fn fill_source_node<'a, 'b: 'a>(
     path: &NodePath,
     contents: &NodeContents<'b>,
 ) -> Result<(), SourceError> {
+    let mut names_used = std::collections::HashSet::new();
+    for prop_def in contents.prop_def {
+        match prop_def {
+            PropDef::Prop(prop) => {
+                let name = prop.prop_name.unescape_name();
+                if !names_used.insert(name) {
+                    // dtc rejects this only during the first definition of a node.
+                    // However, it seems sensible to reopen nodes at non-top level,
+                    // but likely mistaken to redefine a property within a scope.
+                    return Err(prop.prop_name.err("duplicate property"));
+                }
+                node.set_property(name, prop);
+            }
+            PropDef::DelProp(delprop) => {
+                let name = delprop.prop_name.unescape_name();
+                names_used.remove(name);
+                node.remove_property(name);
+            }
+        }
+    }
     for child_def in contents.child_def {
         match child_def {
             ChildDef::ChildNode(childnode) => {
@@ -88,26 +108,6 @@ fn fill_source_node<'a, 'b: 'a>(
                 let childpath = path.join(name);
                 // TODO:  This is potentially quadratic.  Could use the labels in the removed node.
                 node_labels.retain(|_, p| !p.starts_with(&childpath));
-            }
-        }
-    }
-    let mut names_used = std::collections::HashSet::new();
-    for prop_def in contents.prop_def {
-        match prop_def {
-            PropDef::Prop(prop) => {
-                let name = prop.prop_name.unescape_name();
-                if !names_used.insert(name) {
-                    // dtc rejects this only during the first definition of a node.
-                    // However, it seems sensible to reopen nodes at non-top level,
-                    // but likely mistaken to redefine a property within a scope.
-                    return Err(prop.prop_name.err("duplicate property"));
-                }
-                node.set_property(name, prop);
-            }
-            PropDef::DelProp(delprop) => {
-                let name = delprop.prop_name.unescape_name();
-                names_used.remove(name);
-                node.remove_property(name);
             }
         }
     }
