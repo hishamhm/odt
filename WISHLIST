@@ -5,7 +5,6 @@ pretty-printing: better whitespace heuristics
 pretty-printing: more opinionated formatting (e.g. lowercase hex, strip ULL suffixes)
 linting (e.g. unit addresses vs regs property)
 sorted output tree
-facility to query the source span of a property, or the insertion points at which a property could be added
 
 
 incompatible language features
