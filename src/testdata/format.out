@@ -82,8 +82,8 @@
 / {
     empty-prop;
     prop = <(3)>,
-        /bits/ 7 <(- 1)>,
-        <>, "string", [ aa bb ];
+        /bits/ 7 <(-1)>,
+                 <>, "string", [aa bb];
     /delete-property/ prop;
     /delete-node/ child;
 
@@ -178,8 +178,8 @@
 -- 22
 / {
     prop = <3>,
-        <4 5>, "six",
-        <0x07>;
+           <4 5>, "six",
+           <0x07>;
 };
 -- 23
 /* this comment cannot be consumed by Dts since it precedes Header */
