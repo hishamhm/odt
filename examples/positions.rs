@@ -1,5 +1,5 @@
 use clap::Parser as _;
-use odt::fs::Loader;
+use odt::fs::{Loader, LocalFileLoader};
 use odt::merge::merge;
 use odt::node::Node;
 use odt::parse::gen::TypedRule;
@@ -22,9 +22,10 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let loader = Loader::new(args.include);
-    let input = args.input_path.unwrap_or(Loader::STDIN.into());
-    let dts = parse_with_includes(&loader, &input).map_err(|e| loader.with_path(e))?;
+    let loader = LocalFileLoader::new(args.include);
+    let input = args.input_path.unwrap_or(LocalFileLoader::STDIN.into());
+    let arena = bumpalo::Bump::new();
+    let dts = parse_with_includes(&loader, &arena, &input).map_err(|e| loader.with_path(e))?;
     let (tree, node_labels, node_decls) = merge(&dts).map_err(|e| loader.with_path(e))?;
     let node_paths = paths(&tree);
 

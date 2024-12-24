@@ -52,8 +52,9 @@ pub fn dtc_main(
 }
 
 fn dtb_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    let loader = odt::fs::Loader::new(args.include);
-    let input = args.input_path.unwrap_or(odt::fs::Loader::STDIN.into());
+    use odt::fs::{Loader, LocalFileLoader};
+    let loader = LocalFileLoader::new(args.include);
+    let input = args.input_path.unwrap_or(LocalFileLoader::STDIN.into());
     let Some((_path, data)) = loader.read(input.clone()) else {
         panic!("can't read {input:?}");
     };
@@ -80,9 +81,12 @@ fn dtb_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    let loader = odt::fs::Loader::new(args.include);
-    let input = args.input_path.unwrap_or(odt::fs::Loader::STDIN.into());
-    let dts = odt::parse::parse_with_includes(&loader, &input).map_err(|e| loader.with_path(e))?;
+    use odt::fs::{Loader, LocalFileLoader};
+    let loader = LocalFileLoader::new(args.include);
+    let input = args.input_path.unwrap_or(LocalFileLoader::STDIN.into());
+    let arena = bumpalo::Bump::new();
+    let dts = odt::parse::parse_with_includes(&loader, &arena, &input)
+        .map_err(|e| loader.with_path(e))?;
     let (tree, node_labels, _) = odt::merge::merge(&dts).map_err(|e| loader.with_path(e))?;
     let (goal, mut writer) = open_output(args.out)?;
     match args.out_format {

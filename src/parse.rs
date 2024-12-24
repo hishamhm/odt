@@ -33,26 +33,31 @@ pub fn parse_typed<'i>(source: &'i str, arena: &'i Bump) -> Result<&'i Dts<'i>, 
     Ok(dtsfile.dts)
 }
 
-pub fn parse_with_includes<'a>(loader: &'a Loader, path: &Path) -> Result<Dts<'a>, SourceError> {
-    let Some((_, src)) = loader.read_utf8(path.into()) else {
+pub fn parse_with_includes<'a>(
+    loader: &'a impl Loader,
+    arena: &'a Bump,
+    path: &Path,
+) -> Result<Dts<'a>, SourceError> {
+    let Ok(Some((_, src))) = loader.read_utf8(path.into()) else {
         // TODO:  presumably there is some kind of filesystem error we could propagate
         return Err(SourceError::new_unattributed(format!(
             "can't load file {path:?}"
         )));
     };
-    let dts = parse_typed(src, &loader.arena).map_err(|e| e.with_path(path))?;
+    let dts = parse_typed(src, arena).map_err(|e| e.with_path(path))?;
     // make an empty container to receive the merged tree
-    let mut top_def = Vec::new_in(&loader.arena);
-    visit_includes(loader, path, dts, &mut top_def)?;
+    let mut top_def = Vec::new_in(arena);
+    visit_includes(loader, arena, path, dts, &mut top_def)?;
     let out = Dts {
-        top_def: loader.arena.alloc(top_def),
+        top_def: arena.alloc(top_def),
         ..*dts
     };
     Ok(out)
 }
 
 fn visit_includes<'a>(
-    loader: &'a Loader,
+    loader: &'a impl Loader,
+    arena: &'a Bump,
     path: &Path,
     dts: &Dts<'a>,
     out: &mut Vec<&'a gen::TopDef<'a>>,
@@ -61,11 +66,12 @@ fn visit_includes<'a>(
     for include in dts.include {
         let pathspan = include.quoted_string.trim_one();
         // The path is not unescaped in any way before use.
-        let Some((ipath, src)) = loader.find_utf8(dir, Path::new(pathspan.as_str())) else {
+        let Ok(Some((ipath, src))) = loader.find_utf8(dir, Path::new(pathspan.as_str())) else {
+            // TODO:  distinguish UTF-8 errors here (Err(...) vs Ok(None))
             return Err(pathspan.err("can't find include file on search path"));
         };
-        let dts = parse_typed(src, &loader.arena)?;
-        visit_includes(loader, ipath, dts, out)?;
+        let dts = parse_typed(src, arena)?;
+        visit_includes(loader, arena, ipath, dts, out)?;
     }
     if let Some(memres) = dts.memreserve.first() {
         unimplemented!("{}", memres.err("unimplemented"));
