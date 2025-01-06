@@ -247,6 +247,7 @@ impl PrettyPrinter {
             (Rule::BlockComment, Rule::ChildNode) => 1,
             (Rule::LineComment, Rule::ChildNode) => 0,
             (_, Rule::ChildNode) => 2,
+            // TODO:  This adds blank lines around top-level /delete-node/.  Do we want that?
             (Rule::TopDef, _) => 2,
             (Rule::Include, _) => 1,
             (Rule::Semicolon, _) => 1,

@@ -5,6 +5,7 @@ pretty-printing: better whitespace heuristics
 pretty-printing: more opinionated formatting (e.g. lowercase hex, strip ULL suffixes)
 linting (e.g. unit addresses vs regs property)
 sorted output tree
+error-tolerant parsing
 
 
 incompatible language features
