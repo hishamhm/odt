@@ -384,7 +384,7 @@ impl EvalExt for UnaryExpr<'_> {
 impl EvalExt for TernaryPrec<'_> {
     fn eval(&self) -> Result<u64, SourceError> {
         let left = self.logical_or_prec.eval()?;
-        let [mid, right] = self.expr.as_slice() else {
+        let [mid, right] = self.expr else {
             return Ok(left);
         };
         // Note that subexpression evaluation is lazy, unlike dtc.
