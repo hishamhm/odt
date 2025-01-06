@@ -33,24 +33,42 @@ pub fn parse_typed<'i>(source: &'i str, arena: &'i Bump) -> Result<&'i Dts<'i>, 
     Ok(dtsfile.dts)
 }
 
+/// Parse the source file named by `path`.
 pub fn parse_with_includes<'a>(
     loader: &'a impl Loader,
     arena: &'a Bump,
     path: &Path,
 ) -> Result<Dts<'a>, SourceError> {
-    let Ok(Some((_, src))) = loader.read_utf8(path.into()) else {
-        // TODO:  presumably there is some kind of filesystem error we could propagate
-        return Err(SourceError::new_unattributed(format!(
-            "can't load file {path:?}"
-        )));
-    };
-    let dts = parse_typed(src, arena).map_err(|e| e.with_path(path))?;
-    // make an empty container to receive the merged tree
+    parse_concat_with_includes(loader, arena, &[path])
+}
+
+/// Parse the concatenation of the source files named by `paths`.
+pub fn parse_concat_with_includes<'a>(
+    loader: &'a impl Loader,
+    arena: &'a Bump,
+    paths: &[&Path],
+) -> Result<Dts<'a>, SourceError> {
+    let mut span = Span::new("", 0, 0).unwrap();
     let mut top_def = Vec::new_in(arena);
-    visit_includes(loader, arena, path, dts, &mut top_def)?;
+    for path in paths {
+        let Ok(Some((_, src))) = loader.read_utf8(path.into()) else {
+            // TODO:  presumably there is some kind of filesystem error we could propagate
+            return Err(SourceError::new_unattributed(format!(
+                "can't load file {path:?}"
+            )));
+        };
+        let dts = parse_typed(src, arena).map_err(|e| e.with_path(path))?;
+        if span.as_str().is_empty() {
+            span = dts._span;
+        }
+        visit_includes(loader, arena, path, dts, &mut top_def)?;
+    }
     let out = Dts {
+        _span: span,
+        header: &[],
+        include: &[],
+        memreserve: &[],
         top_def: arena.alloc(top_def),
-        ..*dts
     };
     Ok(out)
 }
