@@ -40,9 +40,29 @@ pub trait Loader {
     /// Files successfully read.
     fn positive_deps(&self) -> Vec<PathBuf>;
 
+    /// Directories checked for files not found within them.
+    /// (When any of these change, compilation results could change.)
+    fn negative_deps(&self) -> Vec<PathBuf>;
+
     /// Produce a representation of the files accessed, in the format of a ninja depfile
     /// or the output of `cpp -MD` or `makedepend`.
-    fn write_depfile(&self, goal: &str) -> String;
+    fn write_depfile(&self, goal: &str) -> String {
+        let files = self.positive_deps();
+        let dirs = self.negative_deps();
+        let mut out = String::new();
+        let escape = |s: &str| s.replace(' ', "\\ ");
+        _ = write!(out, "{}:", escape(goal));
+        for f in files {
+            // Arguably we should exclude "<stdin>", but dtc does not.
+            _ = write!(out, " {}", escape(&f.to_string_lossy()));
+        }
+        // TODO:  Make this optional?  Unclear if we want the rigor.
+        for d in dirs {
+            _ = write!(out, " {}", escape(&d.to_string_lossy()));
+        }
+        _ = writeln!(out);
+        out
+    }
 
     /// Given a memory range within a buffer cached by this loader, report the path of the
     /// corresponding file.
@@ -145,17 +165,18 @@ impl Loader for LocalFileLoader {
     }
 
     fn positive_deps(&self) -> Vec<PathBuf> {
-        self.file_contents
+        let mut deps: Vec<_> = self
+            .file_contents
             .lock()
             .unwrap()
             .iter()
             .filter_map(|(path, content)| content.is_some().then_some(path.clone()))
-            .collect()
+            .collect();
+        deps.sort();
+        deps
     }
 
-    fn write_depfile(&self, goal: &str) -> String {
-        let mut files = self.positive_deps();
-        files.sort();
+    fn negative_deps(&self) -> Vec<PathBuf> {
         let mut dirs: Vec<_> = self
             .parents_of_missing
             .lock()
@@ -164,19 +185,7 @@ impl Loader for LocalFileLoader {
             .cloned()
             .collect();
         dirs.sort();
-        let mut out = String::new();
-        let escape = |s: &str| s.replace(' ', "\\ ");
-        _ = write!(out, "{}:", escape(goal));
-        for f in files {
-            // Arguably we should exclude "<stdin>", but dtc does not.
-            _ = write!(out, " {}", escape(&f.to_string_lossy()));
-        }
-        // TODO:  Make this optional?  Unclear if we want the rigor.
-        for d in dirs {
-            _ = write!(out, " {}", escape(&d.to_string_lossy()));
-        }
-        _ = writeln!(out);
-        out
+        dirs
     }
 
     fn path_of_buffer(&self, mem: Range<*const u8>) -> Option<PathBuf> {
