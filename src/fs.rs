@@ -95,7 +95,7 @@ impl LocalFileLoader {
             return err;
         }
         let path = self
-            .path_of_buffer(err.buffer.clone())
+            .path_of_buffer(err.buffer())
             .unwrap_or("<unknown>".into());
         err.with_path(&path)
     }
