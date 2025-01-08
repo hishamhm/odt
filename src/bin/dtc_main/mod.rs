@@ -84,7 +84,7 @@ fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     use odt::fs::{Loader, LocalFileLoader};
     let loader = LocalFileLoader::new(args.include);
     let input = args.input_path.unwrap_or(LocalFileLoader::STDIN.into());
-    let arena = bumpalo::Bump::new();
+    let arena = odt::Arena::new();
     let dts = odt::parse::parse_with_includes(&loader, &arena, &input)
         .map_err(|e| loader.with_path(e))?;
     let (tree, node_labels, _) = odt::merge::merge(&dts).map_err(|e| loader.with_path(e))?;

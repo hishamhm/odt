@@ -167,7 +167,7 @@ fn add_label(
 #[test]
 fn test_duplicate_property() {
     let source = include_str!("testdata/duplicate_property.dts");
-    let arena = bumpalo::Bump::new();
+    let arena = crate::Arena::new();
     let dts = crate::parse::parse_typed(source, &arena).unwrap();
     let err = merge(dts).map(|_| ()).expect_err("should fail");
     let message = format!("{err}");

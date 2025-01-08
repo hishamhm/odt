@@ -9,5 +9,6 @@ pub mod parse;
 pub mod path;
 pub mod print;
 
-type SourceNode<'i> = node::Node<&'i parse::gen::Prop<'i>>;
-type BinaryNode = node::Node<Vec<u8>>;
+pub type Arena = bumpalo::Bump;
+pub type SourceNode<'i> = node::Node<&'i parse::gen::Prop<'i>>;
+pub type BinaryNode = node::Node<Vec<u8>>;

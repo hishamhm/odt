@@ -2,8 +2,8 @@
 
 use crate::error::SourceError;
 use crate::fs::Loader;
+use crate::Arena;
 use bumpalo::collections::Vec;
-use bumpalo::Bump;
 use core::ops::Range;
 use gen::{Dts, DtsFile};
 use pest::iterators::Pair;
@@ -27,7 +27,7 @@ pub fn parse_untyped(source: &str) -> Result<Parsed, SourceError> {
     Ok(dtsfile)
 }
 
-pub fn parse_typed<'i>(source: &'i str, arena: &'i Bump) -> Result<&'i Dts<'i>, SourceError> {
+pub fn parse_typed<'i>(source: &'i str, arena: &'i Arena) -> Result<&'i Dts<'i>, SourceError> {
     let tree = parse_untyped(source)?;
     let dtsfile = DtsFile::build(tree, arena);
     Ok(dtsfile.dts)
@@ -36,7 +36,7 @@ pub fn parse_typed<'i>(source: &'i str, arena: &'i Bump) -> Result<&'i Dts<'i>, 
 /// Parse the source file named by `path`.
 pub fn parse_with_includes<'a>(
     loader: &'a impl Loader,
-    arena: &'a Bump,
+    arena: &'a Arena,
     path: &Path,
 ) -> Result<Dts<'a>, SourceError> {
     parse_concat_with_includes(loader, arena, &[path])
@@ -45,7 +45,7 @@ pub fn parse_with_includes<'a>(
 /// Parse the concatenation of the source files named by `paths`.
 pub fn parse_concat_with_includes<'a>(
     loader: &'a impl Loader,
-    arena: &'a Bump,
+    arena: &'a Arena,
     paths: &[&Path],
 ) -> Result<Dts<'a>, SourceError> {
     let mut span = Span::new("", 0, 0).unwrap();
@@ -75,7 +75,7 @@ pub fn parse_concat_with_includes<'a>(
 
 fn visit_includes<'a>(
     loader: &'a impl Loader,
-    arena: &'a Bump,
+    arena: &'a Arena,
     path: &Path,
     dts: &Dts<'a>,
     out: &mut Vec<&'a gen::TopDef<'a>>,

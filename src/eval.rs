@@ -499,7 +499,7 @@ fn test_eval() {
         #[cfg(feature = "wrapping-arithmetic")]
         include_str!("testdata/random_expressions.dts"),
     ] {
-        let arena = bumpalo::Bump::new();
+        let arena = crate::Arena::new();
         let dts = crate::parse::parse_typed(source, &arena).unwrap();
         let (tree, node_labels, _) = crate::merge::merge(&dts).unwrap();
         let tree = eval(tree, node_labels).unwrap();

@@ -5,6 +5,7 @@ use odt::node::Node;
 use odt::parse::gen::TypedRule;
 use odt::parse::parse_with_includes;
 use odt::path::NodePath;
+use odt::Arena;
 use pest::Span;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -24,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let loader = LocalFileLoader::new(args.include);
     let input = args.input_path.unwrap_or(LocalFileLoader::STDIN.into());
-    let arena = bumpalo::Bump::new();
+    let arena = Arena::new();
     let dts = parse_with_includes(&loader, &arena, &input).map_err(|e| loader.with_path(e))?;
     let (tree, node_labels, node_decls) = merge(&dts).map_err(|e| loader.with_path(e))?;
     let node_paths = paths(&tree);
