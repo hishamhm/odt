@@ -11,7 +11,7 @@ default-run = "dtc"
 hashlink = "0.10"
 pest = "2"
 pest_derive = "2"
-clap = { version = "4.5.21", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 bumpalo = { version = "3.16.0", features = ["collections"] }
 pestle = "0.2"
 num-derive = "0.4.2"
