@@ -82,6 +82,10 @@ impl<P> Node<P> {
         self.labels.replace(name.into());
     }
 
+    pub fn labels(&mut self) -> impl Iterator<Item = &String> {
+      self.labels.iter()
+  }
+
     pub fn labels_as_display(&self) -> LabelsDisplay {
         LabelsDisplay(&self.labels)
     }
