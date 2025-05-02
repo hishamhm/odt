@@ -122,7 +122,7 @@ impl<P> Default for Node<P> {
     }
 }
 
-trait OptionDisplay {
+pub trait OptionDisplay {
     fn fmt_opt(&self) -> Option<String>;
 }
 
