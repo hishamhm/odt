@@ -42,6 +42,10 @@ impl<P> Node<P> {
         }
     }
 
+    pub fn get_child_mut(&mut self, name: &str) -> Option<&mut Node<P>> {
+        self.children.get_mut(name)
+    }
+
     pub fn get_child(&self, name: &str) -> Option<&Node<P>> {
         self.children.get(name)
     }
