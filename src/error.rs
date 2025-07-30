@@ -8,7 +8,7 @@ use std::path::Path;
 pub struct SourceError {
     /// The wrapped error.
     pub pest_error: Box<Error<Rule>>,
-    /// The source's address range; effectively, a '&static str which can only be compared by
+    /// The source's address range; effectively, a &'static str which can only be compared by
     /// identity.  This is used to reconstruct the source path during error reporting.
     pub buffer: Range<usize>,
 }
