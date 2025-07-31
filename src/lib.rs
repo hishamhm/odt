@@ -12,3 +12,31 @@ pub mod print;
 pub type Arena = bumpalo::Bump;
 pub type SourceNode<'i> = node::Node<&'i parse::gen::Prop<'i>>;
 pub type BinaryNode = node::Node<Vec<u8>>;
+
+pub fn compile(
+    loader: &impl fs::Loader,
+    arena: &Arena,
+    dts_paths: &[&std::path::Path],
+) -> Result<BinaryNode, error::SourceError> {
+    let annotate = |e| loader.annotate_error(e);
+    let inner = || {
+        let dts = parse::parse_concat_with_includes(loader, arena, dts_paths)?;
+        let (tree, node_labels, _) = merge::merge(&dts)?;
+        eval::eval(tree, node_labels)
+    };
+    inner().map_err(annotate)
+}
+
+pub fn merge<'a>(
+    loader: &'a impl fs::Loader,
+    arena: &'a Arena,
+    dts_paths: &[&std::path::Path],
+) -> Result<SourceNode<'a>, error::SourceError> {
+    let annotate = |e| loader.annotate_error(e);
+    let inner = || {
+        let dts = parse::parse_concat_with_includes(loader, arena, dts_paths)?;
+        let tree = merge::merge(&dts)?.0;
+        Ok(tree)
+    };
+    inner().map_err(annotate)
+}

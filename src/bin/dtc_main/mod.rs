@@ -85,13 +85,10 @@ fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let loader = LocalFileLoader::new(args.include);
     let input = args.input_path.unwrap_or(LocalFileLoader::STDIN.into());
     let arena = odt::Arena::new();
-    let annotate = |e| loader.annotate_error(e);
-    let dts = odt::parse::parse_with_includes(&loader, &arena, &input).map_err(annotate)?;
-    let (tree, node_labels, _) = odt::merge::merge(&dts).map_err(annotate)?;
     let (goal, mut writer) = open_output(args.out)?;
     match args.out_format {
         Format::Dtb => {
-            let tree = odt::eval::eval(tree, node_labels).map_err(annotate)?;
+            let tree = odt::compile(&loader, &arena, &[&input])?;
             let dtb = odt::flat::serialize(&tree);
             writer.write_all(&dtb)?;
         }
@@ -104,6 +101,7 @@ fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             //   5. discard labels
             // Currently this prints after step 2.  Step 4 discards type information,
             // so the output would be significantly worse than that of `dtc -O dts`.
+            let tree = odt::merge(&loader, &arena, &[&input])?;
             let source = format!("/dts-v1/;{}/{tree};", tree.labels_as_display());
             // Reparse and pretty-print the output.
             let tree = odt::parse::parse_untyped(&source).unwrap();
