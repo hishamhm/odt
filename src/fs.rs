@@ -67,6 +67,17 @@ pub trait Loader {
     /// Given a memory range within a buffer cached by this loader, report the path of the
     /// corresponding file.
     fn path_of_buffer(&self, mem: Range<*const u8>) -> Option<PathBuf>;
+
+    /// Annotate an error with the path of a source file owned by this buffer.
+    fn annotate_error(&self, err: SourceError) -> SourceError {
+        if err.path().is_some() {
+            return err;
+        }
+        let path = self
+            .path_of_buffer(err.buffer())
+            .unwrap_or("<unknown>".into());
+        err.with_path(&path)
+    }
 }
 
 /// A stateful helper for loading source files from a list of include directories to be searched.
@@ -107,17 +118,6 @@ impl LocalFileLoader {
                 return;
             }
         }
-    }
-
-    // TODO: move this to SourceError
-    pub fn with_path(&self, err: SourceError) -> SourceError {
-        if err.path().is_some() {
-            return err;
-        }
-        let path = self
-            .path_of_buffer(err.buffer())
-            .unwrap_or("<unknown>".into());
-        err.with_path(&path)
     }
 }
 

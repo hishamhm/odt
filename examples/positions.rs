@@ -26,8 +26,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let loader = LocalFileLoader::new(args.include);
     let input = args.input_path.unwrap_or(LocalFileLoader::STDIN.into());
     let arena = Arena::new();
-    let dts = parse_with_includes(&loader, &arena, &input).map_err(|e| loader.with_path(e))?;
-    let (tree, node_labels, node_decls) = merge(&dts).map_err(|e| loader.with_path(e))?;
+    let annotate = |e| loader.annotate_error(e);
+    let dts = parse_with_includes(&loader, &arena, &input).map_err(annotate)?;
+    let (tree, node_labels, node_decls) = merge(&dts).map_err(annotate)?;
     let node_paths = paths(&tree);
 
     // we don't need `fn paths()` now that node_decls is returned from `merge()`
