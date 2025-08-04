@@ -1,20 +1,32 @@
 //! Facilities for evaluating expressions and phandle references in a devicetree.
 
 use crate::error::SourceError;
+use crate::fs::Loader;
 use crate::label::{LabelMap, LabelResolver};
 use crate::parse::gen::*;
-use crate::parse::{SpanExt, TypedRuleExt};
+use crate::parse::{SpanExt, TypedRuleExt, parse_quoted_string};
 use crate::path::NodePath;
-use crate::{BinaryNode, SourceNode};
+use crate::{Arena, BinaryNode, SourceNode};
 use core::str::CharIndices;
 use hashlink::{LinkedHashMap, LinkedHashSet};
 use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 
 /// Assigns phandles and evaluates expressions.
-/// Call with the output of `crate::merge::merge()`.
-pub fn eval(tree: SourceNode, node_labels: LabelMap) -> Result<BinaryNode, SourceError> {
+/// Call with the output of `crate::merge::merge()` or `resolve_incbin_paths()`.
+pub fn eval(
+    tree: SourceNode,
+    node_labels: LabelMap,
+    loader: &impl Loader,
+) -> Result<BinaryNode, SourceError> {
     let phandles = assign_phandles(&tree, &node_labels)?;
-    let mut tree = evaluate_expressions(tree, &node_labels, &phandles)?;
+    let read_file = |path: &Path| match loader.read(path.to_owned()) {
+        Some((_, data)) => Ok(data.to_vec()),
+        None => Err(SourceError::new_unattributed(format!(
+            "can't load file {path:?}"
+        ))),
+    };
+    let mut tree = evaluate_expressions(tree, &node_labels, &phandles, read_file)?;
     // poke assigned phandle values into the final tree
     for (path, phandle) in phandles {
         tree.walk_mut(path.segments())
@@ -22,6 +34,91 @@ pub fn eval(tree: SourceNode, node_labels: LabelMap) -> Result<BinaryNode, Sourc
             .set_property("phandle", phandle.to_be_bytes().into());
     }
     Ok(tree)
+}
+
+fn path_from_bytes(bytes: &[u8]) -> PathBuf {
+    #[cfg(not(unix))]
+    return PathBuf::from(String::from_utf8_lossy(&bytes).into_owned());
+    #[cfg(unix)]
+    return PathBuf::from(&<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(&bytes));
+}
+
+/// Locate all files referenced by incbin directives, cache their contents, and rewrite their
+/// source nodes to cwd-relative or absolute paths (rather than relative to the including file).
+/// Call with the output of `crate::merge::merge()`.
+pub fn resolve_incbin_paths<'a>(
+    loader: &'a impl Loader,
+    arena: &'a Arena,
+    tree: SourceNode<'a>,
+) -> Result<SourceNode<'a>, SourceError> {
+    let map_v = |v: &'a Value| match v {
+        Value::Incbin(incbin) => {
+            let buffer = incbin.span().get_input().as_bytes().as_ptr_range();
+            let source = loader.path_of_buffer(buffer);
+            let path_bytes = incbin.incbin_args.quoted_string.unescape()?;
+            let path = path_from_bytes(&path_bytes);
+            match loader.find(source.as_deref().and_then(Path::parent), &path) {
+                Some((found, _)) if found == path => Ok(v),
+                Some((found, _)) => {
+                    // TODO: check if this round-trips a UTF-8 path.
+                    let new_path_bytes: Vec<u8> = found
+                        .to_string_lossy()
+                        .bytes()
+                        .map(|b| std::ascii::escape_default(b))
+                        .flatten()
+                        .collect();
+                    let new_path = String::from_utf8_lossy(&new_path_bytes);
+                    let quoted_string = arena.alloc_str(&format!("\"{new_path}\""));
+                    let quoted_string = parse_quoted_string(quoted_string, arena).unwrap();
+                    let incbin_args = arena.alloc(IncbinArgs {
+                        quoted_string,
+                        ..*incbin.incbin_args
+                    });
+                    let incbin = arena.alloc(Incbin {
+                        incbin_args,
+                        ..**incbin
+                    });
+                    // XXX  This doesn't work for DTS output, because OptionDisplay calls
+                    // PropValue::str(), which doesn't see the inner span edits.
+                    Ok(&*arena.alloc(Value::Incbin(incbin)))
+                }
+                None => Err(incbin.err(format!("/incbin/ {path:?}: file not found"))),
+            }
+        }
+        other => Ok(other),
+    };
+    let map_lv = |lv: &'a LabeledValue| -> Result<_, SourceError> {
+        Ok(arena.alloc(LabeledValue {
+            value: map_v(lv.value)?,
+            ..*lv
+        }))
+    };
+    let map_pv = |pv: &'a PropValue| -> Result<&'a PropValue, SourceError> {
+        let mut v = pv.labeled_value.to_vec();
+        for lv in v.iter_mut() {
+            *lv = map_lv(*lv)?;
+        }
+        Ok(arena.alloc(PropValue {
+            labeled_value: arena.alloc_slice_copy(&v),
+            ..*pv
+        }))
+    };
+    let map_p = |p: &'a Prop<'a>| {
+        Ok(match p.prop_value {
+            Some(pv) if contains_incbin(pv) => arena.alloc(Prop {
+                prop_value: Some(map_pv(pv)?),
+                ..*p
+            }),
+            _ => p,
+        })
+    };
+    tree.map_values(&map_p)
+}
+
+fn contains_incbin(pv: &PropValue) -> bool {
+    pv.labeled_value
+        .iter()
+        .any(|lv| matches!(lv.value, Value::Incbin(_)))
 }
 
 type PhandleMap = LinkedHashMap<NodePath, u32>;
@@ -106,6 +203,8 @@ fn visit_node_phandles<P>(
             propvalue,
             |_| Err(propvalue.err("phandle expression cannot use a string node reference")),
             lookup_phandle,
+            // dtc allows this, but there's no need for it.
+            |_| Err(propvalue.err("phandle expression cannot use /incbin/")),
         )?;
         let n = phandle.len();
         if n != 4 {
@@ -131,15 +230,17 @@ fn evaluate_expressions(
     root: SourceNode,
     node_labels: &LabelMap,
     phandles: &PhandleMap,
+    read_file: impl Fn(&Path) -> Result<Vec<u8>, SourceError>,
 ) -> Result<BinaryNode, SourceError> {
     let old = root.clone();
     let labels = &LabelResolver(node_labels, &old);
     let lookup_label = |noderef: &NodeReference| labels.resolve(noderef);
     let lookup_phandle =
         |noderef: &NodeReference| Ok(*phandles.get(&labels.resolve(noderef)?).unwrap());
+    let read_file = |p: &Path| read_file(p);
     let eval = |prop: &Prop| match prop.prop_value {
         None => Ok(vec![]),
-        Some(propvalue) => evaluate_propvalue(propvalue, lookup_label, lookup_phandle),
+        Some(propvalue) => evaluate_propvalue(propvalue, lookup_label, lookup_phandle, read_file),
     };
     root.map_values(&eval)
 }
@@ -148,6 +249,7 @@ fn evaluate_propvalue(
     propvalue: &PropValue,
     lookup_label: impl Fn(&NodeReference) -> Result<NodePath, SourceError>,
     lookup_phandle: impl Fn(&NodeReference) -> Result<u32, SourceError>,
+    read_file: impl Fn(&Path) -> Result<Vec<u8>, SourceError>,
 ) -> Result<Vec<u8>, SourceError> {
     let mut r = vec![];
     for labeled_value in propvalue.labeled_value {
@@ -221,7 +323,20 @@ fn evaluate_propvalue(
                 }
             }
             Value::Incbin(incbin) => {
-                unimplemented!("{}", incbin.err("/incbin/ unimplemented"));
+                if incbin.incbin_args.numeric_literal.len() > 0 {
+                    unimplemented!(
+                        "{}",
+                        incbin.err("/incbin/ (..., offset, length) unimplemented")
+                    );
+                }
+                let path_bytes = incbin.incbin_args.quoted_string.unescape()?;
+                let path = path_from_bytes(&path_bytes);
+                let bin = read_file(&path).unwrap();
+                if r.is_empty() {
+                    r = bin;
+                } else {
+                    r.extend(bin);
+                }
             }
         }
     }
@@ -388,11 +503,7 @@ impl EvalExt for TernaryPrec<'_> {
             return Ok(left);
         };
         // Note that subexpression evaluation is lazy, unlike dtc.
-        if left != 0 {
-            mid.eval()
-        } else {
-            right.eval()
-        }
+        if left != 0 { mid.eval() } else { right.eval() }
     }
 }
 
@@ -454,18 +565,10 @@ fn eval_binary_op(left: u64, op: &str, right: u64) -> Result<u64, &'static str> 
         check(a.checked_mul(b).ok_or(a.wrapping_mul(b)))
     }
     fn shl(a: u64, b: u64) -> u64 {
-        if b < 64 {
-            a << b
-        } else {
-            0
-        }
+        if b < 64 { a << b } else { 0 }
     }
     fn shr(a: u64, b: u64) -> u64 {
-        if b < 64 {
-            a >> b
-        } else {
-            0
-        }
+        if b < 64 { a >> b } else { 0 }
     }
     match op {
         "+" => add(left, right).ok_or("arithmetic overflow"),
@@ -502,7 +605,7 @@ fn test_eval() {
         let arena = crate::Arena::new();
         let dts = crate::parse::parse_typed(source, &arena).unwrap();
         let (tree, node_labels, _) = crate::merge::merge(&dts).unwrap();
-        let tree = eval(tree, node_labels).unwrap();
+        let tree = eval(tree, node_labels, &crate::fs::DummyLoader).unwrap();
         let check = tree.get_child("check").unwrap_or(&tree);
         for (name, value) in check.properties() {
             assert_eq!(

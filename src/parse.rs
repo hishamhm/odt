@@ -1,11 +1,11 @@
 //! Facilities for parsing DTS files and expanding "/include/" directives.
 
+use crate::Arena;
 use crate::error::SourceError;
 use crate::fs::Loader;
-use crate::Arena;
 use bumpalo::collections::Vec;
 use core::ops::Range;
-use gen::{Dts, DtsFile};
+use gen::{Dts, DtsFile, QuotedString};
 use pest::iterators::Pair;
 use pest::{Parser, Span};
 use std::path::Path;
@@ -31,6 +31,17 @@ pub fn parse_typed<'i>(source: &'i str, arena: &'i Arena) -> Result<&'i Dts<'i>,
     let tree = parse_untyped(source)?;
     let dtsfile = DtsFile::build(tree, arena);
     Ok(dtsfile.dts)
+}
+
+pub(crate) fn parse_quoted_string<'i>(
+    source: &'i str,
+    arena: &'i Arena,
+) -> Result<&'i QuotedString<'i>, SourceError> {
+    let mut it = DtsParser::parse(Rule::QuotedString, source)?;
+    let tree = it.next().unwrap();
+    assert_eq!(tree.as_rule(), Rule::QuotedString);
+    assert_eq!(it.next(), None);
+    Ok(QuotedString::build(tree, arena))
 }
 
 /// Parse the source file named by `path`.

@@ -80,6 +80,28 @@ pub trait Loader {
     }
 }
 
+/// A do-nothing implementation for tests.
+pub struct DummyLoader;
+
+#[allow(unused_variables)]
+impl Loader for DummyLoader {
+    fn find(&self, relative_to: Option<&Path>, included_path: &Path) -> Option<(&Path, &[u8])> {
+        None
+    }
+    fn read<'a>(&'a self, path: PathBuf) -> Option<(&'a Path, &'a [u8])> {
+        None
+    }
+    fn positive_deps(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+    fn negative_deps(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+    fn path_of_buffer(&self, mem: Range<*const u8>) -> Option<PathBuf> {
+        None
+    }
+}
+
 /// A stateful helper for loading source files from a list of include directories to be searched.
 pub struct LocalFileLoader {
     /// directories to search
