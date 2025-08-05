@@ -40,7 +40,7 @@ fn path_from_bytes(bytes: &[u8]) -> PathBuf {
     #[cfg(not(unix))]
     return PathBuf::from(String::from_utf8_lossy(&bytes).into_owned());
     #[cfg(unix)]
-    return PathBuf::from(&<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(&bytes));
+    return PathBuf::from(&<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(bytes));
 }
 
 /// Locate all files referenced by incbin directives, cache their contents, and rewrite their
@@ -64,8 +64,7 @@ pub fn resolve_incbin_paths<'a>(
                     let new_path_bytes: Vec<u8> = found
                         .to_string_lossy()
                         .bytes()
-                        .map(|b| std::ascii::escape_default(b))
-                        .flatten()
+                        .flat_map(std::ascii::escape_default)
                         .collect();
                     let new_path = String::from_utf8_lossy(&new_path_bytes);
                     let quoted_string = arena.alloc_str(&format!("\"{new_path}\""));
@@ -96,7 +95,7 @@ pub fn resolve_incbin_paths<'a>(
     let map_pv = |pv: &'a PropValue| -> Result<&'a PropValue, SourceError> {
         let mut v = pv.labeled_value.to_vec();
         for lv in v.iter_mut() {
-            *lv = map_lv(*lv)?;
+            *lv = map_lv(lv)?;
         }
         Ok(arena.alloc(PropValue {
             labeled_value: arena.alloc_slice_copy(&v),
@@ -323,7 +322,7 @@ fn evaluate_propvalue(
                 }
             }
             Value::Incbin(incbin) => {
-                if incbin.incbin_args.numeric_literal.len() > 0 {
+                if !incbin.incbin_args.numeric_literal.is_empty() {
                     unimplemented!(
                         "{}",
                         incbin.err("/incbin/ (..., offset, length) unimplemented")

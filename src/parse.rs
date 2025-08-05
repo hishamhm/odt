@@ -19,7 +19,7 @@ pub struct DtsParser;
 /// wish to visit every character of the input.
 pub type Parsed<'a> = Pair<'a, Rule>;
 
-pub fn parse_untyped(source: &str) -> Result<Parsed, SourceError> {
+pub fn parse_untyped(source: &str) -> Result<Parsed<'_>, SourceError> {
     let mut it = DtsParser::parse(Rule::DtsFile, source)?;
     let dtsfile = it.next().unwrap();
     assert_eq!(dtsfile.as_rule(), Rule::DtsFile);
@@ -138,11 +138,11 @@ pub trait SpanExt {
         let span = range.map(|r| span.get(r).unwrap()).unwrap_or(span);
         SourceError::new(message.into(), span)
     }
-    fn span(&self) -> Span;
+    fn span(&self) -> Span<'_>;
 }
 
 impl SpanExt for Span<'_> {
-    fn span(&self) -> Span {
+    fn span(&self) -> Span<'_> {
         *self
     }
 }

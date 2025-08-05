@@ -90,7 +90,7 @@ impl<P> Node<P> {
       self.labels.iter()
   }
 
-    pub fn labels_as_display(&self) -> LabelsDisplay {
+    pub fn labels_as_display(&self) -> LabelsDisplay<'_> {
         LabelsDisplay(&self.labels)
     }
 
