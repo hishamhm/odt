@@ -1,11 +1,11 @@
 //! Facilities for converting a parsed Devicetree Source file into a tree of nodes.
 
+use crate::SourceNode;
 use crate::error::SourceError;
 use crate::label::{LabelMap, LabelResolver};
-use crate::parse::gen::*;
 use crate::parse::TypedRuleExt;
+use crate::parse::rules::*;
 use crate::path::NodePath;
-use crate::SourceNode;
 use hashlink::LinkedHashMap;
 
 pub type NodeDecls<'i> = LinkedHashMap<NodePath, &'i NodeBody<'i>>;

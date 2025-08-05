@@ -87,8 +87,8 @@ impl<P> Node<P> {
     }
 
     pub fn labels(&mut self) -> impl Iterator<Item = &String> {
-      self.labels.iter()
-  }
+        self.labels.iter()
+    }
 
     pub fn labels_as_display(&self) -> LabelsDisplay<'_> {
         LabelsDisplay(&self.labels)
@@ -130,7 +130,7 @@ pub trait OptionDisplay {
     fn fmt_opt(&self) -> Option<String>;
 }
 
-impl OptionDisplay for &crate::parse::gen::Prop<'_> {
+impl OptionDisplay for &crate::parse::rules::Prop<'_> {
     fn fmt_opt(&self) -> Option<String> {
         use crate::parse::TypedRuleExt;
         self.prop_value.map(|pv| pv.str().into())

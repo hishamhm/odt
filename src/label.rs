@@ -1,7 +1,7 @@
 use crate::error::SourceError;
 use crate::node::Node;
-use crate::parse::gen::NodeReference;
 use crate::parse::TypedRuleExt;
+use crate::parse::rules::NodeReference;
 use crate::path::NodePath;
 use hashlink::LinkedHashMap;
 

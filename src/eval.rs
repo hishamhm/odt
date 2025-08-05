@@ -3,7 +3,7 @@
 use crate::error::SourceError;
 use crate::fs::Loader;
 use crate::label::{LabelMap, LabelResolver};
-use crate::parse::gen::*;
+use crate::parse::rules::*;
 use crate::parse::{SpanExt, TypedRuleExt, parse_quoted_string};
 use crate::path::NodePath;
 use crate::{Arena, BinaryNode, SourceNode};

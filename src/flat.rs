@@ -5,8 +5,8 @@ use crate::BinaryNode;
 use core::fmt::{Debug, Display, Formatter};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 const FDT_HEADER_SIZE: usize = 40;
 const FDT_MAGIC: u32 = 0xd00dfeed;

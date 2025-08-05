@@ -5,14 +5,14 @@ use crate::error::SourceError;
 use crate::fs::Loader;
 use bumpalo::collections::Vec;
 use core::ops::Range;
-use gen::{Dts, DtsFile, QuotedString};
 use pest::iterators::Pair;
 use pest::{Parser, Span};
+use rules::{Dts, DtsFile, QuotedString};
 use std::path::Path;
 
 #[derive(pest_derive::Parser, pestle::TypedRules)]
 #[grammar = "src/dts.pest"]
-#[typed_mod = "gen"]
+#[typed_mod = "rules"]
 pub struct DtsParser;
 
 /// This is pest's untyped grammar, which is convenient for clients that
@@ -89,7 +89,7 @@ fn visit_includes<'a>(
     arena: &'a Arena,
     path: &Path,
     dts: &Dts<'a>,
-    out: &mut Vec<&'a gen::TopDef<'a>>,
+    out: &mut Vec<&'a rules::TopDef<'a>>,
 ) -> Result<(), SourceError> {
     let dir = Some(path.parent().unwrap());
     for include in dts.include {
@@ -153,7 +153,7 @@ pub trait TypedRuleExt<'a> {
     fn trim_one(&self) -> Span<'a>;
 }
 
-impl<'a, T: gen::TypedRule<'a>> TypedRuleExt<'a> for T {
+impl<'a, T: rules::TypedRule<'a>> TypedRuleExt<'a> for T {
     fn err(&self, message: impl Into<String>) -> SourceError {
         self.span().err(message.into())
     }

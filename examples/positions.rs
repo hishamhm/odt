@@ -1,11 +1,11 @@
 use clap::Parser as _;
+use odt::Arena;
 use odt::fs::{Loader, LocalFileLoader};
 use odt::merge::merge;
 use odt::node::Node;
-use odt::parse::gen::TypedRule;
 use odt::parse::parse_with_includes;
+use odt::parse::rules::TypedRule;
 use odt::path::NodePath;
-use odt::Arena;
 use pest::Span;
 use std::collections::HashSet;
 use std::path::PathBuf;
