@@ -22,7 +22,7 @@ pub fn compile(
     let inner = || {
         let dts = parse::parse_concat_with_includes(loader, arena, dts_paths)?;
         let (tree, node_labels, _) = merge::merge(&dts)?;
-        let tree = eval::resolve_incbin_paths(loader, arena, tree).map_err(annotate)?;
+        let tree = eval::resolve_incbin_paths(loader, arena, tree)?;
         eval::eval(tree, node_labels, loader)
     };
     inner().map_err(annotate)
@@ -37,7 +37,7 @@ pub fn merge<'a>(
     let inner = || {
         let dts = parse::parse_concat_with_includes(loader, arena, dts_paths)?;
         let tree = merge::merge(&dts)?.0;
-        let tree = eval::resolve_incbin_paths(loader, arena, tree).map_err(annotate)?;
+        let tree = eval::resolve_incbin_paths(loader, arena, tree)?;
         Ok(tree)
     };
     inner().map_err(annotate)
