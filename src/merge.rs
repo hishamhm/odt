@@ -21,7 +21,8 @@ pub fn merge<'i>(dts: &Dts<'i>) -> Result<(SourceNode<'i>, LabelMap, NodeDecls<'
     let mut node_labels = LabelMap::new();
     let mut node_decls = NodeDecls::new();
     if let Some(memres) = dts.memreserve.first() {
-        unimplemented!("{}", memres.err("unimplemented"));
+        // unreachable if input came from `visit_includes()`, which also doesn't handle memres
+        return Err(memres.err("memres unimplemented"));
     }
     for top_def in dts.top_def {
         match top_def {

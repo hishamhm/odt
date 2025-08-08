@@ -323,10 +323,7 @@ fn evaluate_propvalue(
             }
             Value::Incbin(incbin) => {
                 if !incbin.incbin_args.numeric_literal.is_empty() {
-                    unimplemented!(
-                        "{}",
-                        incbin.err("/incbin/ (..., offset, length) unimplemented")
-                    );
+                    return Err(incbin.err("/incbin/ (..., offset, length) unimplemented"));
                 }
                 let path_bytes = incbin.incbin_args.quoted_string.unescape()?;
                 let path = path_from_bytes(&path_bytes);

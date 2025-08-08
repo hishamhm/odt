@@ -103,7 +103,7 @@ fn visit_includes<'a>(
         visit_includes(loader, arena, ipath, dts, out)?;
     }
     if let Some(memres) = dts.memreserve.first() {
-        unimplemented!("{}", memres.err("unimplemented"));
+        return Err(memres.err("memres unimplemented"));
     }
     out.extend(dts.top_def);
     // TODO:  It may be useful to have a mode which prints the combined sources
