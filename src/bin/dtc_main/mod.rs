@@ -34,10 +34,12 @@ struct Args {
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
 enum Format {
-    /// devicetree source
-    Dts,
     /// devicetree blob
     Dtb,
+    /// devicetree source
+    Dts,
+    /// fully-evaluated devicetree source
+    Dtv,
 }
 
 pub fn dtc_main(
@@ -47,7 +49,7 @@ pub fn dtc_main(
 
     match args.in_format {
         Format::Dtb => dtb_input(args),
-        Format::Dts => dts_input(args),
+        Format::Dts | Format::Dtv => dts_input(args),
     }
 }
 
@@ -65,7 +67,7 @@ fn dtb_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             let dtb = odt::flat::serialize(&tree);
             writer.write_all(&dtb)?;
         }
-        Format::Dts => {
+        Format::Dts | Format::Dtv => {
             let source = format!("/dts-v1/;/{tree};");
             // Reparse and pretty-print the output.
             let tree = odt::parse::parse_untyped(&source).unwrap();
@@ -92,15 +94,19 @@ fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             let dtb = odt::flat::serialize(&tree);
             writer.write_all(&dtb)?;
         }
+        Format::Dtv => {
+            // Lower all the way to binary node values, then convert back into source.
+            // Types are lost in this process.
+            let tree = odt::compile(&loader, &arena, &[&input])?;
+            let source = format!("/dts-v1/;/{tree};");
+            // Reparse and pretty-print the output.
+            let tree = odt::parse::parse_untyped(&source).unwrap();
+            let output = odt::print::format(tree);
+            write!(writer, "{output}")?;
+        }
         Format::Dts => {
-            // TODO:  How much should we process the input before printing here?
-            //   1. paste together included files
-            //   2. tree operations
-            //   3. assign phandles
-            //   4. evaluate expressions
-            //   5. discard labels
-            // Currently this prints after step 2.  Step 4 discards type information,
-            // so the output would be significantly worse than that of `dtc -O dts`.
+            // This shows the tree after /include/ directives and merge operations,
+            // but before assigning phandles or evaluating expressions.
             let tree = odt::merge(&loader, &arena, &[&input])?;
             let source = format!("/dts-v1/;{}/{tree};", tree.labels_as_display());
             // Reparse and pretty-print the output.
