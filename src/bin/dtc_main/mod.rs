@@ -5,7 +5,7 @@ use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
 #[derive(clap::Parser)]
-#[command(version)]
+#[command(version, args_override_self = true)]
 struct Args {
     /// Input file
     #[arg(value_name = "input_path")]
