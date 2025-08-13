@@ -30,6 +30,9 @@ struct Args {
     /// Add a directory to the include search path
     #[arg(short = 'i', long, value_name = "path")]
     include: Vec<PathBuf>,
+
+    #[arg(short = 'W', long)]
+    treat_warnings_as_errors: bool,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
@@ -87,39 +90,45 @@ fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let loader = LocalFileLoader::new(args.include);
     let input = args.input_path.unwrap_or(LocalFileLoader::STDIN.into());
     let arena = odt::Arena::new();
-    let (goal, mut writer) = open_output(args.out)?;
-    match args.out_format {
+    let mut scribe = odt::error::Scribe::new(args.treat_warnings_as_errors);
+    let bytes = match args.out_format {
         Format::Dtb => {
-            let tree = odt::compile(&loader, &arena, &[&input])?;
-            let dtb = odt::flat::serialize(&tree);
-            writer.write_all(&dtb)?;
+            let tree = odt::compile(&loader, &arena, &[&input], &mut scribe);
+            odt::flat::serialize(&tree)
         }
         Format::Dtv => {
             // Lower all the way to binary node values, then convert back into source.
             // Types are lost in this process.
-            let tree = odt::compile(&loader, &arena, &[&input])?;
+            let tree = odt::compile(&loader, &arena, &[&input], &mut scribe);
             let source = format!("/dts-v1/;/{tree};");
             // Reparse and pretty-print the output.
             let tree = odt::parse::parse_untyped(&source).unwrap();
             let output = odt::print::format(tree);
-            write!(writer, "{output}")?;
+            output.into_bytes()
         }
         Format::Dts => {
             // This shows the tree after /include/ directives and merge operations,
             // but before assigning phandles or evaluating expressions.
-            let tree = odt::merge(&loader, &arena, &[&input])?;
+            let tree = odt::merge(&loader, &arena, &[&input], &mut scribe);
             let source = format!("/dts-v1/;{}/{tree};", tree.labels_as_display());
             // Reparse and pretty-print the output.
             let tree = odt::parse::parse_untyped(&source).unwrap();
             let output = odt::print::format(tree);
-            write!(writer, "{output}")?;
+            output.into_bytes()
         }
-    }
+    };
+    let ok = scribe.report(&loader, &mut std::io::stderr());
+    let (goal, mut writer) = open_output(args.out)?;
+    writer.write_all(&bytes)?;
     if let Some(depfile) = args.out_dependency {
         let content = loader.write_depfile(&goal);
         std::fs::write(depfile, content)?;
     }
-    Ok(())
+    if ok {
+        Ok(())
+    } else {
+        Err("compilation failed".into())
+    }
 }
 
 fn open_output(

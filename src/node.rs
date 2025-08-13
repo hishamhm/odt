@@ -94,7 +94,7 @@ impl<P> Node<P> {
         LabelsDisplay(&self.labels)
     }
 
-    pub fn map_values<T, E>(self, f: &impl Fn(P) -> Result<T, E>) -> Result<Node<T>, E> {
+    pub fn map_values<T>(self, f: &mut impl FnMut(P) -> T) -> Node<T> {
         let Self {
             labels,
             properties,
@@ -102,17 +102,17 @@ impl<P> Node<P> {
         } = self;
         let properties = properties
             .into_iter()
-            .map(|(k, v)| Ok((k, f(v)?)))
-            .collect::<Result<LinkedHashMap<String, T>, E>>()?;
+            .map(|(k, v)| (k, f(v)))
+            .collect::<LinkedHashMap<String, T>>();
         let children = children
             .into_iter()
-            .map(|(k, v)| Ok((k, v.map_values(f)?)))
-            .collect::<Result<LinkedHashMap<String, Node<T>>, E>>()?;
-        Ok(Node::<T> {
+            .map(|(k, v)| (k, v.map_values(f)))
+            .collect::<LinkedHashMap<String, Node<T>>>();
+        Node::<T> {
             labels,
             properties,
             children,
-        })
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 use clap::Parser as _;
 use odt::Arena;
+use odt::error::Scribe;
 use odt::fs::{Loader, LocalFileLoader};
 use odt::merge::merge;
 use odt::node::Node;
@@ -26,9 +27,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let loader = LocalFileLoader::new(args.include);
     let input = args.input_path.unwrap_or(LocalFileLoader::STDIN.into());
     let arena = Arena::new();
-    let annotate = |e| loader.annotate_error(e);
-    let dts = parse_with_includes(&loader, &arena, &input).map_err(annotate)?;
-    let (tree, node_labels, node_decls) = merge(&dts).map_err(annotate)?;
+    let mut scribe = Scribe::new(false);
+    let dts = parse_with_includes(&loader, &arena, &input, &mut scribe);
+    let (tree, node_labels, node_decls) = merge(&dts, &mut scribe);
+    _ = scribe.report(&loader, &mut std::io::stderr()); // print errors but continue
     let node_paths = paths(&tree);
 
     // we don't need `fn paths()` now that node_decls is returned from `merge()`

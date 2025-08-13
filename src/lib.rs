@@ -17,28 +17,21 @@ pub fn compile(
     loader: &impl fs::Loader,
     arena: &Arena,
     dts_paths: &[&std::path::Path],
-) -> Result<BinaryNode, error::SourceError> {
-    let annotate = |e| loader.annotate_error(e);
-    let inner = || {
-        let dts = parse::parse_concat_with_includes(loader, arena, dts_paths)?;
-        let (tree, node_labels, _) = merge::merge(&dts)?;
-        let tree = eval::resolve_incbin_paths(loader, arena, tree)?;
-        eval::eval(tree, node_labels, loader)
-    };
-    inner().map_err(annotate)
+    scribe: &mut error::Scribe,
+) -> BinaryNode {
+    let dts = parse::parse_concat_with_includes(loader, arena, dts_paths, scribe);
+    let (tree, node_labels, _) = merge::merge(&dts, scribe);
+    let tree = eval::resolve_incbin_paths(loader, arena, tree, scribe);
+    eval::eval(tree, node_labels, loader, scribe)
 }
 
 pub fn merge<'a>(
     loader: &'a impl fs::Loader,
     arena: &'a Arena,
     dts_paths: &[&std::path::Path],
-) -> Result<SourceNode<'a>, error::SourceError> {
-    let annotate = |e| loader.annotate_error(e);
-    let inner = || {
-        let dts = parse::parse_concat_with_includes(loader, arena, dts_paths)?;
-        let tree = merge::merge(&dts)?.0;
-        let tree = eval::resolve_incbin_paths(loader, arena, tree)?;
-        Ok(tree)
-    };
-    inner().map_err(annotate)
+    scribe: &mut error::Scribe,
+) -> SourceNode<'a> {
+    let dts = parse::parse_concat_with_includes(loader, arena, dts_paths, scribe);
+    let tree = merge::merge(&dts, scribe).0;
+    eval::resolve_incbin_paths(loader, arena, tree, scribe)
 }

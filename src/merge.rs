@@ -1,7 +1,7 @@
 //! Facilities for converting a parsed Devicetree Source file into a tree of nodes.
 
 use crate::SourceNode;
-use crate::error::SourceError;
+use crate::error::{Scribe, SourceError};
 use crate::label::{LabelMap, LabelResolver};
 use crate::parse::TypedRuleExt;
 use crate::parse::rules::*;
@@ -16,45 +16,57 @@ pub type NodeDecls<'i> = LinkedHashMap<NodePath, &'i NodeBody<'i>>;
 ///   / { x = <(0 / 0)>; };
 ///   / { /delete-property/ x; };
 /// while `dtc` does not.
-pub fn merge<'i>(dts: &Dts<'i>) -> Result<(SourceNode<'i>, LabelMap, NodeDecls<'i>), SourceError> {
+pub fn merge<'i>(dts: &Dts<'i>, scribe: &mut Scribe) -> (SourceNode<'i>, LabelMap, NodeDecls<'i>) {
     let mut root = SourceNode::default();
     let mut node_labels = LabelMap::new();
     let mut node_decls = NodeDecls::new();
-    if let Some(memres) = dts.memreserve.first() {
+    for memres in dts.memreserve {
         // unreachable if input came from `visit_includes()`, which also doesn't handle memres
-        return Err(memres.err("memres unimplemented"));
+        scribe.err(memres.err("memres unimplemented"));
     }
     for top_def in dts.top_def {
         match top_def {
             TopDef::TopNode(topnode) => {
                 let path = match topnode.top_node_name {
                     TopNodeName::NodeReference(noderef) => {
-                        LabelResolver(&node_labels, &root).resolve(noderef)?
+                        match LabelResolver(&node_labels, &root).resolve(noderef) {
+                            Ok(path) => path,
+                            Err(e) => {
+                                scribe.err(e);
+                                continue;
+                            }
+                        }
                     }
                     TopNodeName::RootNodeName(_) => NodePath::root(),
                 };
                 let node = root.walk_mut(path.segments()).unwrap();
                 for label in topnode.label {
-                    add_label(&mut node_labels, label, node, &path)?;
+                    if let Err(e) = add_label(&mut node_labels, label, node, &path) {
+                        scribe.err(e);
+                    }
                 }
                 let body = topnode.node_body;
-                fill_source_node(&mut node_labels, &mut node_decls, node, &path, body)?;
+                fill_source_node(&mut node_labels, &mut node_decls, node, &path, body, scribe);
             }
             TopDef::TopDelNode(topdelnode) => {
                 let noderef = topdelnode.node_reference;
-                let path = LabelResolver(&node_labels, &root).resolve(noderef)?;
-                node_decls.remove(&path);
-                delete_node(&mut node_labels, &mut root, &path);
+                match LabelResolver(&node_labels, &root).resolve(noderef) {
+                    Ok(path) => {
+                        node_decls.remove(&path);
+                        delete_node(&mut node_labels, &mut root, &path);
+                    }
+                    Err(e) => scribe.err(e),
+                }
             }
             TopDef::TopOmitNode(_) => (), // ignored
         }
     }
-    Ok((root, node_labels, node_decls))
+    (root, node_labels, node_decls)
 }
 
 fn delete_node(node_labels: &mut LabelMap, root: &mut SourceNode, path: &NodePath) {
     if root.walk(path.segments()).is_none() {
-        panic!("deleting nonexistent node {path:?}");
+        panic!("deleting nonexistent node {path}");
     }
     if path.is_root() {
         // delete everything
@@ -74,7 +86,8 @@ fn fill_source_node<'o, 'i: 'o>(
     node: &mut SourceNode<'o>,
     path: &NodePath,
     body: &'i NodeBody<'i>,
-) -> Result<(), SourceError> {
+    scribe: &mut Scribe,
+) {
     node_decls.replace(path.clone(), body);
     let mut names_used = std::collections::HashSet::new();
     for prop_def in body.node_contents.prop_def {
@@ -85,7 +98,7 @@ fn fill_source_node<'o, 'i: 'o>(
                     // dtc rejects this only during the first definition of a node.
                     // However, it seems sensible to reopen nodes at non-top level,
                     // but likely mistaken to redefine a property within a scope.
-                    return Err(prop.prop_name.err("duplicate property"));
+                    scribe.warn(prop.prop_name.err("duplicate property"));
                 }
                 node.set_property(name, prop);
             }
@@ -104,11 +117,13 @@ fn fill_source_node<'o, 'i: 'o>(
                 let child = node.add_child(name);
                 for child_node_prefix in childnode.child_node_prefix {
                     if let ChildNodePrefix::Label(label) = child_node_prefix {
-                        add_label(node_labels, label, child, &child_path)?;
+                        if let Err(e) = add_label(node_labels, label, child, &child_path) {
+                            scribe.err(e);
+                        }
                     }
                 }
                 let body = childnode.node_body;
-                fill_source_node(node_labels, node_decls, child, &child_path, body)?;
+                fill_source_node(node_labels, node_decls, child, &child_path, body, scribe);
             }
             ChildDef::DelNode(delnode) => {
                 let name = delnode.node_name.unescape_name();
@@ -120,7 +135,6 @@ fn fill_source_node<'o, 'i: 'o>(
             }
         }
     }
-    Ok(())
 }
 
 trait UnescapeName<'a> {
@@ -158,7 +172,7 @@ fn add_label(
         //   /delete-node/ &x;
         // Unclear if we need to emulate this.
         if old != *path {
-            return Err(label.err(format!("Duplicate label also on {old:?}")));
+            return Err(label.err(format!("Duplicate label also on {old}")));
         }
     }
     node.add_label(s);
@@ -170,7 +184,16 @@ fn test_duplicate_property() {
     let source = include_str!("testdata/duplicate_property.dts");
     let arena = crate::Arena::new();
     let dts = crate::parse::parse_typed(source, &arena).unwrap();
-    let err = merge(dts).map(|_| ()).expect_err("should fail");
+    let mut scribe = Scribe::new(false);
+    let _dts = merge(dts, &mut scribe);
+    let (warnings, errors) = scribe.into_inner();
+    assert!(
+        errors.is_empty(),
+        "expected only warnings, got errors:\n{errors:?}"
+    );
+    let [err] = &warnings[..] else {
+        panic!("expected one warning, got {warnings:?}");
+    };
     let message = format!("{err}");
     assert!(
         message.contains("duplicate property") && message.contains("this time it's an error"),

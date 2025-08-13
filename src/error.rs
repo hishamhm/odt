@@ -1,7 +1,9 @@
+use crate::fs::Loader;
 use crate::parse::Rule;
 use core::fmt::{Debug, Display, Formatter};
 use core::ops::Range;
 use pest::error::{Error, ErrorVariant};
+use std::io::Write;
 use std::path::Path;
 
 /// An error annotated with a span of source code.
@@ -69,3 +71,72 @@ impl Display for SourceError {
 }
 
 impl core::error::Error for SourceError {}
+
+/// A receiver for warnings and errors generated during a lengthy computation.  The idea is to
+/// allow evaluation to proceed as far as possible while still capturing any errors that occur.
+/// A Scribe cannot be dropped; `into_inner()` or `report()` must be called.
+#[derive(Default)]
+pub struct Scribe {
+    warnings_are_errors: bool,
+    warnings: Vec<SourceError>,
+    errors: Vec<SourceError>,
+}
+
+impl Scribe {
+    pub fn new(warnings_are_errors: bool) -> Self {
+        Self {
+            warnings_are_errors,
+            warnings: vec![],
+            errors: vec![],
+        }
+    }
+
+    /// Report a warning.
+    pub fn warn(&mut self, err: SourceError) {
+        if self.warnings_are_errors {
+            self.errors.push(err);
+        } else {
+            self.warnings.push(err);
+        }
+    }
+
+    /// Report an error.
+    pub fn err(&mut self, err: SourceError) {
+        self.errors.push(err);
+    }
+
+    /// Extract the logged warnings and errors.
+    pub fn into_inner(mut self) -> (Vec<SourceError>, Vec<SourceError>) {
+        let mut warnings = vec![];
+        let mut errors = vec![];
+        core::mem::swap(&mut warnings, &mut self.warnings);
+        core::mem::swap(&mut errors, &mut self.errors);
+        core::mem::forget(self);
+        (warnings, errors)
+    }
+
+    /// Print the logged warning and errors to the supplied sink.
+    /// (Warnings are printed only if no errors occurred.)
+    /// Returns false if errors occurred, or true otherwise.
+    #[must_use]
+    pub fn report(self, loader: &impl Loader, console: &mut impl Write) -> bool {
+        let (warnings, errors) = self.into_inner();
+        if errors.is_empty() {
+            for err in warnings {
+                _ = writeln!(console, "Warning: {}", loader.annotate_error(err));
+            }
+            true
+        } else {
+            for err in errors {
+                _ = writeln!(console, "Error: {}", loader.annotate_error(err));
+            }
+            false
+        }
+    }
+}
+
+impl Drop for Scribe {
+    fn drop(&mut self) {
+        panic!("Scribe must be consumed explicitly");
+    }
+}

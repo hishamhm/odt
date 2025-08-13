@@ -1,6 +1,6 @@
 //! Facilities for evaluating expressions and phandle references in a devicetree.
 
-use crate::error::SourceError;
+use crate::error::{Scribe, SourceError};
 use crate::fs::Loader;
 use crate::label::{LabelMap, LabelResolver};
 use crate::parse::rules::*;
@@ -18,22 +18,23 @@ pub fn eval(
     tree: SourceNode,
     node_labels: LabelMap,
     loader: &impl Loader,
-) -> Result<BinaryNode, SourceError> {
-    let phandles = assign_phandles(&tree, &node_labels)?;
+    scribe: &mut Scribe,
+) -> BinaryNode {
+    let phandles = assign_phandles(&tree, &node_labels, scribe);
     let read_file = |path: &Path| match loader.read(path.to_owned()) {
         Some((_, data)) => Ok(data.to_vec()),
         None => Err(SourceError::new_unattributed(format!(
             "can't load file {path:?}"
         ))),
     };
-    let mut tree = evaluate_expressions(tree, &node_labels, &phandles, read_file)?;
+    let mut tree = evaluate_expressions(tree, &node_labels, &phandles, read_file, scribe);
     // poke assigned phandle values into the final tree
     for (path, phandle) in phandles {
         tree.walk_mut(path.segments())
             .unwrap()
             .set_property("phandle", phandle.to_be_bytes().into());
     }
-    Ok(tree)
+    tree
 }
 
 fn path_from_bytes(bytes: &[u8]) -> PathBuf {
@@ -50,16 +51,25 @@ pub fn resolve_incbin_paths<'a>(
     loader: &'a impl Loader,
     arena: &'a Arena,
     tree: SourceNode<'a>,
-) -> Result<SourceNode<'a>, SourceError> {
-    let map_v = |v: &'a Value| match v {
+    scribe: &mut Scribe,
+) -> SourceNode<'a> {
+    let mut map_v = |v: &'a Value| match v {
         Value::Incbin(incbin) => {
             let buffer = incbin.span().get_input().as_bytes().as_ptr_range();
             let source = loader.path_of_buffer(buffer);
-            let path_bytes = incbin.incbin_args.quoted_string.unescape()?;
+            let path_bytes = match incbin.incbin_args.quoted_string.unescape() {
+                Err(e) => {
+                    scribe.err(e);
+                    return v;
+                }
+                Ok(bytes) => bytes,
+            };
             let path = path_from_bytes(&path_bytes);
             match loader.find(source.as_deref().and_then(Path::parent), &path) {
-                Some((found, _)) if found == path => Ok(v),
                 Some((found, _)) => {
+                    if found == path {
+                        return v;
+                    }
                     // TODO: check if this round-trips a UTF-8 path.
                     let new_path_bytes: Vec<u8> = found
                         .to_string_lossy()
@@ -79,39 +89,37 @@ pub fn resolve_incbin_paths<'a>(
                     });
                     // XXX  This doesn't work for DTS output, because OptionDisplay calls
                     // PropValue::str(), which doesn't see the inner span edits.
-                    Ok(&*arena.alloc(Value::Incbin(incbin)))
+                    &*arena.alloc(Value::Incbin(incbin))
                 }
-                None => Err(incbin.err(format!("/incbin/ {path:?}: file not found"))),
+                None => {
+                    scribe.err(incbin.err(format!("/incbin/ {path:?}: file not found")));
+                    v
+                }
             }
         }
-        other => Ok(other),
+        other => other,
     };
-    let map_lv = |lv: &'a LabeledValue| -> Result<_, SourceError> {
-        Ok(arena.alloc(LabeledValue {
-            value: map_v(lv.value)?,
-            ..*lv
-        }))
-    };
-    let map_pv = |pv: &'a PropValue| -> Result<&'a PropValue, SourceError> {
+    let mut map_pv = |pv: &'a PropValue| -> &'a PropValue {
         let mut v = pv.labeled_value.to_vec();
         for lv in v.iter_mut() {
-            *lv = map_lv(lv)?;
+            *lv = arena.alloc(LabeledValue {
+                value: map_v(lv.value),
+                ..**lv
+            });
         }
-        Ok(arena.alloc(PropValue {
+        arena.alloc(PropValue {
             labeled_value: arena.alloc_slice_copy(&v),
             ..*pv
-        }))
-    };
-    let map_p = |p: &'a Prop<'a>| {
-        Ok(match p.prop_value {
-            Some(pv) if contains_incbin(pv) => arena.alloc(Prop {
-                prop_value: Some(map_pv(pv)?),
-                ..*p
-            }),
-            _ => p,
         })
     };
-    tree.map_values(&map_p)
+    let mut map_p = |p: &'a Prop<'a>| match p.prop_value {
+        Some(pv) if contains_incbin(pv) => arena.alloc(Prop {
+            prop_value: Some(map_pv(pv)),
+            ..*p
+        }),
+        _ => p,
+    };
+    tree.map_values(&mut map_p)
 }
 
 fn contains_incbin(pv: &PropValue) -> bool {
@@ -122,14 +130,14 @@ fn contains_incbin(pv: &PropValue) -> bool {
 
 type PhandleMap = LinkedHashMap<NodePath, u32>;
 
-fn assign_phandles(root: &SourceNode, node_labels: &LabelMap) -> Result<PhandleMap, SourceError> {
+fn assign_phandles(root: &SourceNode, node_labels: &LabelMap, scribe: &mut Scribe) -> PhandleMap {
     let labels = &LabelResolver(node_labels, root);
     // Find the targets of all phandle references.
     let mut need_phandles = LinkedHashSet::<NodePath>::new();
-    visit_phandle_references(labels, root, &NodePath::root(), &mut need_phandles)?;
+    visit_phandle_references(labels, root, &NodePath::root(), &mut need_phandles, scribe);
     // Find existing phandle properties.
     let mut phandles = vec![];
-    visit_node_phandles(root, &NodePath::root(), labels, &mut phandles)?;
+    visit_node_phandles(root, &NodePath::root(), labels, &mut phandles, scribe);
     // TODO:  Report an error for duplicate phandles.
     // `visit_node_phandles()` could collect into a set keyed on phandle value.
     let taken: std::collections::HashSet<u32> = phandles.iter().map(|(_, v)| *v).collect();
@@ -145,7 +153,7 @@ fn assign_phandles(root: &SourceNode, node_labels: &LabelMap) -> Result<PhandleM
         phandles.insert(path, next_phandle);
         next_phandle += 1;
     }
-    Ok(phandles)
+    phandles
 }
 
 fn visit_phandle_references<P>(
@@ -153,15 +161,20 @@ fn visit_phandle_references<P>(
     node: &SourceNode,
     path: &NodePath,
     need_phandles: &mut LinkedHashSet<NodePath>,
-) -> Result<(), SourceError> {
+    scribe: &mut Scribe,
+) {
     for (_, prop) in node.properties() {
         if let Some(propvalue) = prop.prop_value {
             for labeled_value in propvalue.labeled_value {
                 if let Value::Cells(cells) = labeled_value.value {
                     for label_or_cell in cells.label_or_cell {
                         if let LabelOrCell::Cell(Cell::NodeReference(phandle)) = label_or_cell {
-                            let target = labels.resolve(phandle)?;
-                            need_phandles.replace(target);
+                            match labels.resolve(phandle) {
+                                Ok(target) => {
+                                    need_phandles.replace(target);
+                                }
+                                Err(e) => scribe.err(e),
+                            }
                         }
                     }
                 }
@@ -170,9 +183,54 @@ fn visit_phandle_references<P>(
     }
     for (name, child) in node.children() {
         let child_path = path.join(name);
-        visit_phandle_references(labels, child, &child_path, need_phandles)?;
+        visit_phandle_references(labels, child, &child_path, need_phandles, scribe);
     }
-    Ok(())
+}
+
+fn node_phandle<P>(
+    node: &SourceNode,
+    path: &NodePath,
+    labels: &LabelResolver<P>,
+) -> Result<Option<u32>, SourceError> {
+    let Some(prop) = node.get_property("phandle") else {
+        return Ok(None);
+    };
+    // Each expression must have length 4, and may contain zero phandle references, or one,
+    // pointing to itself.
+    let Some(propvalue) = prop.prop_value else {
+        return Err(prop.err("phandle property is empty"));
+    };
+    // We want to know whether `lookup_phandle` is called, but `evaluate_propvalue()`
+    // expects Fn, not FnMut.  Work around that with a Cell.
+    let phandle_is_self_reference = std::cell::Cell::new(false);
+    let lookup_phandle = |noderef: &NodeReference| {
+        if &labels.resolve(noderef)? != path {
+            Err(propvalue.err("phandle expression cannot reference another phandle"))
+        } else {
+            phandle_is_self_reference.set(true);
+            Ok(0)
+        }
+    };
+    let phandle = evaluate_propvalue(
+        propvalue,
+        |_| Err(propvalue.err("phandle expression cannot use a string node reference")),
+        lookup_phandle,
+        // dtc allows this, but there's no need for it.
+        |_| Err(propvalue.err("phandle expression cannot use /incbin/")),
+    )?;
+    let n = phandle.len();
+    if n != 4 {
+        return Err(propvalue.err(format!("phandles must be u32, got {n} bytes")));
+    };
+    // `visit_phandle_references()` will find self-references, so we omit them.
+    if phandle_is_self_reference.get() {
+        return Ok(None);
+    }
+    let phandle = u32::from_be_bytes(phandle.try_into().unwrap());
+    if phandle == 0 || phandle == 0xffff_ffff {
+        return Err(propvalue.err(format!("phandle has reserved value {phandle:#x}")));
+    }
+    Ok(Some(phandle))
 }
 
 fn visit_node_phandles<P>(
@@ -180,49 +238,17 @@ fn visit_node_phandles<P>(
     path: &NodePath,
     labels: &LabelResolver<P>,
     out: &mut Vec<(NodePath, u32)>,
-) -> Result<(), SourceError> {
-    if let Some(prop) = node.get_property("phandle") {
-        // Each expression must have length 4, and may contain zero phandle references, or one,
-        // pointing to itself.
-        let Some(propvalue) = prop.prop_value else {
-            return Err(prop.err("phandle property is empty"));
-        };
-        // We want to know whether `lookup_phandle` is called, but `evaluate_propvalue()`
-        // expects Fn, not FnMut.  Work around that with a Cell.
-        let phandle_is_self_reference = std::cell::Cell::new(false);
-        let lookup_phandle = |noderef: &NodeReference| {
-            if &labels.resolve(noderef)? != path {
-                Err(propvalue.err("phandle expression cannot reference another phandle"))
-            } else {
-                phandle_is_self_reference.set(true);
-                Ok(0)
-            }
-        };
-        let phandle = evaluate_propvalue(
-            propvalue,
-            |_| Err(propvalue.err("phandle expression cannot use a string node reference")),
-            lookup_phandle,
-            // dtc allows this, but there's no need for it.
-            |_| Err(propvalue.err("phandle expression cannot use /incbin/")),
-        )?;
-        let n = phandle.len();
-        if n != 4 {
-            return Err(propvalue.err(format!("phandles must be u32, got {n} bytes")));
-        };
-        // `visit_phandle_references()` will find self-references, so we omit them.
-        if !phandle_is_self_reference.get() {
-            let phandle = u32::from_be_bytes(phandle.try_into().unwrap());
-            if phandle == 0 || phandle == 0xffff_ffff {
-                return Err(propvalue.err(format!("phandle has reserved value {phandle:#x}")));
-            }
-            out.push((path.clone(), phandle));
-        }
+    scribe: &mut Scribe,
+) {
+    match node_phandle(node, path, labels) {
+        Ok(Some(phandle)) => out.push((path.clone(), phandle)),
+        Ok(None) => (),
+        Err(e) => scribe.err(e),
     }
     for (name, child) in node.children() {
         let child_path = path.join(name);
-        visit_node_phandles(child, &child_path, labels, out)?;
+        visit_node_phandles(child, &child_path, labels, out, scribe);
     }
-    Ok(())
 }
 
 fn evaluate_expressions(
@@ -230,20 +256,33 @@ fn evaluate_expressions(
     node_labels: &LabelMap,
     phandles: &PhandleMap,
     read_file: impl Fn(&Path) -> Result<Vec<u8>, SourceError>,
-) -> Result<BinaryNode, SourceError> {
+    scribe: &mut Scribe,
+) -> BinaryNode {
     let old = root.clone();
     let labels = &LabelResolver(node_labels, &old);
     let lookup_label = |noderef: &NodeReference| labels.resolve(noderef);
     let lookup_phandle =
         |noderef: &NodeReference| Ok(*phandles.get(&labels.resolve(noderef)?).unwrap());
     let read_file = |p: &Path| read_file(p);
-    let eval = |prop: &Prop| match prop.prop_value {
-        None => Ok(vec![]),
-        Some(propvalue) => evaluate_propvalue(propvalue, lookup_label, lookup_phandle, read_file),
+    let mut eval = |prop: &Prop| match prop.prop_value {
+        None => vec![],
+        Some(propvalue) => {
+            match evaluate_propvalue(propvalue, lookup_label, lookup_phandle, read_file) {
+                Ok(v) => v,
+                Err(e) => {
+                    scribe.err(e);
+                    // TODO:  Consider returning `node::Node<Result<Vec<u8>, SourceError>>`
+                    // instead of this in-band signaling.
+                    b"<ERROR>\0".to_vec()
+                }
+            }
+        }
     };
-    root.map_values(&eval)
+    root.map_values(&mut eval)
 }
 
+// TODO:  Accept Scribe here as well.  It's probably not useful to report more than one error, or
+// perform partial evaluation, but we might want to return warnings, e.g. about integer overflow.
 fn evaluate_propvalue(
     propvalue: &PropValue,
     lookup_label: impl Fn(&NodeReference) -> Result<NodePath, SourceError>,
@@ -598,10 +637,13 @@ fn test_eval() {
         #[cfg(feature = "wrapping-arithmetic")]
         include_str!("testdata/random_expressions.dts"),
     ] {
+        let loader = crate::fs::DummyLoader;
         let arena = crate::Arena::new();
         let dts = crate::parse::parse_typed(source, &arena).unwrap();
-        let (tree, node_labels, _) = crate::merge::merge(&dts).unwrap();
-        let tree = eval(tree, node_labels, &crate::fs::DummyLoader).unwrap();
+        let mut scribe = Scribe::new(true);
+        let (tree, node_labels, _) = crate::merge::merge(&dts, &mut scribe);
+        let tree = eval(tree, node_labels, &loader, &mut scribe);
+        assert!(scribe.report(&loader, &mut std::io::stderr()));
         let check = tree.get_child("check").unwrap_or(&tree);
         for (name, value) in check.properties() {
             assert_eq!(
