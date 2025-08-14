@@ -1,6 +1,8 @@
 // This is in a mod.rs so cargo's "autobins" feature doesn't find it.
 
 use clap::Parser as _;
+use odt::parse::TypedRuleExt;
+use odt::parse::rules::TopDef;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
@@ -39,6 +41,8 @@ struct Args {
 enum Format {
     /// devicetree blob
     Dtb,
+    /// devicetree source with includes expanded
+    Dti,
     /// devicetree source
     Dts,
     /// fully-evaluated devicetree source
@@ -52,7 +56,7 @@ pub fn dtc_main(
 
     match args.in_format {
         Format::Dtb => dtb_input(args),
-        Format::Dts | Format::Dtv => dts_input(args),
+        Format::Dti | Format::Dts | Format::Dtv => dts_input(args),
     }
 }
 
@@ -70,7 +74,7 @@ fn dtb_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             let dtb = odt::flat::serialize(&tree);
             writer.write_all(&dtb)?;
         }
-        Format::Dts | Format::Dtv => {
+        Format::Dti | Format::Dts | Format::Dtv => {
             let source = format!("/dts-v1/;/{tree};");
             // Reparse and pretty-print the output.
             let tree = odt::parse::parse_untyped(&source).unwrap();
@@ -96,14 +100,17 @@ fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             let tree = odt::compile(&loader, &arena, &[&input], &mut scribe);
             odt::flat::serialize(&tree)
         }
-        Format::Dtv => {
-            // Lower all the way to binary node values, then convert back into source.
-            // Types are lost in this process.
-            let tree = odt::compile(&loader, &arena, &[&input], &mut scribe);
-            let source = format!("/dts-v1/;/{tree};");
-            // Reparse and pretty-print the output.
-            let tree = odt::parse::parse_untyped(&source).unwrap();
-            let output = odt::print::format(tree);
+        Format::Dti => {
+            // This shows the tree after /include/ directives are processed.
+            let dts = odt::parse::parse_with_includes(&loader, &arena, &input, &mut scribe);
+            let mut output = String::new();
+            for top_def in dts.top_def {
+                if let TopDef::Include(_) = top_def {
+                    output.push_str("// ");
+                }
+                output.push_str(top_def.str());
+                output.push('\n');
+            }
             output.into_bytes()
         }
         Format::Dts => {
@@ -111,6 +118,16 @@ fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             // but before assigning phandles or evaluating expressions.
             let tree = odt::merge(&loader, &arena, &[&input], &mut scribe);
             let source = format!("/dts-v1/;{}/{tree};", tree.labels_as_display());
+            // Reparse and pretty-print the output.
+            let tree = odt::parse::parse_untyped(&source).unwrap();
+            let output = odt::print::format(tree);
+            output.into_bytes()
+        }
+        Format::Dtv => {
+            // Lower all the way to binary node values, then convert back into source.
+            // Types are lost in this process.
+            let tree = odt::compile(&loader, &arena, &[&input], &mut scribe);
+            let source = format!("/dts-v1/;/{tree};");
             // Reparse and pretty-print the output.
             let tree = odt::parse::parse_untyped(&source).unwrap();
             let output = odt::print::format(tree);

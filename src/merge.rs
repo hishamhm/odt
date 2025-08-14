@@ -10,7 +10,12 @@ use hashlink::LinkedHashMap;
 
 pub type NodeDecls<'i> = LinkedHashMap<NodePath, &'i NodeBody<'i>>;
 
-/// Transform the parse tree into a tree of SourceNodes indexed by path.  This handles deletions
+/// Transforms a parse tree into a tree of SourceNodes indexed by path.
+///
+/// Include directives are ignored; they should already have been substituted by
+/// `parse_concat_with_includes()`.
+///
+/// This handles deletions
 /// of nodes and properties, property overrides, and label assignments.  We may delete invalid
 /// constructs without evaluating them.  For example, we accept
 ///   / { x = <(0 / 0)>; };
@@ -20,12 +25,12 @@ pub fn merge<'i>(dts: &Dts<'i>, scribe: &mut Scribe) -> (SourceNode<'i>, LabelMa
     let mut root = SourceNode::default();
     let mut node_labels = LabelMap::new();
     let mut node_decls = NodeDecls::new();
-    for memres in dts.memreserve {
-        // unreachable if input came from `visit_includes()`, which also doesn't handle memres
-        scribe.err(memres.err("memres unimplemented"));
-    }
     for top_def in dts.top_def {
         match top_def {
+            TopDef::Header(_) => (),      // ignored
+            TopDef::Include(_) => (),     // already processed
+            TopDef::Memreserve(_) => (),  // ignored
+            TopDef::TopOmitNode(_) => (), // ignored
             TopDef::TopNode(topnode) => {
                 let path = match topnode.top_node_name {
                     TopNodeName::NodeReference(noderef) => {
@@ -58,7 +63,6 @@ pub fn merge<'i>(dts: &Dts<'i>, scribe: &mut Scribe) -> (SourceNode<'i>, LabelMa
                     Err(e) => scribe.err(e),
                 }
             }
-            TopDef::TopOmitNode(_) => (), // ignored
         }
     }
     (root, node_labels, node_decls)

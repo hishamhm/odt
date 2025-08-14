@@ -7,7 +7,7 @@ use bumpalo::collections::Vec;
 use core::ops::Range;
 use pest::iterators::Pair;
 use pest::{Parser, Span};
-use rules::{Dts, DtsFile, QuotedString};
+use rules::{Dts, DtsFile, QuotedString, TopDef};
 use std::path::Path;
 
 #[derive(pest_derive::Parser, pestle::TypedRules)]
@@ -85,9 +85,6 @@ pub fn parse_concat_with_includes<'a>(
     }
     Dts {
         _span: span,
-        header: &[],
-        include: &[],
-        memreserve: &[],
         top_def: arena.alloc(top_def),
     }
 }
@@ -101,7 +98,11 @@ fn visit_includes<'a>(
     scribe: &mut Scribe,
 ) {
     let dir = Some(path.parent().unwrap());
-    for include in dts.include {
+    for top_def in dts.top_def {
+        out.push(top_def);
+        let TopDef::Include(include) = top_def else {
+            continue;
+        };
         let pathspan = include.quoted_string.trim_one();
         // The path is not unescaped in any way before use.
         match loader.find_utf8(dir, Path::new(pathspan.as_str())) {
@@ -113,15 +114,6 @@ fn visit_includes<'a>(
             _ => scribe.err(pathspan.err("can't find include file on search path")),
         }
     }
-    for memres in dts.memreserve {
-        scribe.err(memres.err("memres unimplemented"));
-    }
-    out.extend(dts.top_def);
-    // TODO:  It may be useful to have a mode which prints the combined sources
-    // before tree operations.  Roughly:
-    //     for x in dts.top_def {
-    //         println!("{}", x.str());
-    //     }
 }
 
 // Implements the unstable method `str::substr_range()`.
