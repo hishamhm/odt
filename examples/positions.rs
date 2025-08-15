@@ -2,6 +2,7 @@ use clap::Parser as _;
 use odt::Arena;
 use odt::error::Scribe;
 use odt::fs::{Loader, LocalFileLoader};
+use odt::line::LineTableCache;
 use odt::merge::merge;
 use odt::node::Node;
 use odt::parse::parse_with_includes;
@@ -53,21 +54,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    let source_location = |span: &Span| {
+    let ltc = LineTableCache::default();
+
+    fn source_location<'a>(
+        loader: &'a LocalFileLoader,
+        ltc: &LineTableCache<'a>,
+        span: &Span<'a>,
+    ) -> (PathBuf, usize, usize) {
         let buffer = span.get_input().as_bytes().as_ptr_range();
         let path = loader.path_of_buffer(buffer).unwrap();
-        // XXX BEWARE XXX
-        // This query is linear in the file size, so quadratic in a loop!
-        // If multiple queries are needed, add a cache of line starts to loader.
-        let (line, col) = span.start_pos().line_col();
+        let (line, col) = ltc.start_line_col(span);
         // The column value is in codepoints, not bytes.
         (path, line, col)
-    };
+    }
 
     // show locations of all nodes and properties
     for path in node_paths {
         let node_decl = node_decls[&path];
-        let (file, line, col) = source_location(node_decl.span());
+        let (file, line, col) = source_location(&loader, &ltc, node_decl.span());
         println!(
             "node {path} last defined at {}:{line}:{col}",
             file.display()
@@ -79,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 None => prop.semicolon.span(),
                 Some(propvalue) => propvalue.labeled_value[0].value.span(),
             };
-            let (file, line, col) = source_location(span);
+            let (file, line, col) = source_location(&loader, &ltc, span);
             println!("  {name} defined at {}:{line}:{col}", file.display());
         }
         println!();
