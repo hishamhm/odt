@@ -70,7 +70,7 @@ pub fn parse_concat_with_includes<'a>(
                     if span.as_str().is_empty() {
                         span = dts._span;
                     }
-                    visit_includes(loader, arena, path, dts, &mut top_def, scribe);
+                    visit_includes(1, loader, arena, path, dts, &mut top_def, scribe);
                 }
                 // TODO:  is with_path() needed here?
                 Err(e) => scribe.err(e.with_path(path)),
@@ -90,6 +90,7 @@ pub fn parse_concat_with_includes<'a>(
 }
 
 fn visit_includes<'a>(
+    depth: usize,
     loader: &'a impl Loader,
     arena: &'a Arena,
     path: &Path,
@@ -103,11 +104,17 @@ fn visit_includes<'a>(
         let TopDef::Include(include) = top_def else {
             continue;
         };
+        // `dtc` has a different limit: it checks that no more than 200 files are parsed,
+        // regardless of nesting.
+        if depth >= 100 {
+            scribe.err(include.err("includes nested too deeply"));
+            return;
+        }
         let pathspan = include.quoted_string.trim_one();
         // The path is not unescaped in any way before use.
         match loader.find_utf8(dir, Path::new(pathspan.as_str())) {
             Ok(Some((ipath, src))) => match parse_typed(src, arena) {
-                Ok(dts) => visit_includes(loader, arena, ipath, dts, out, scribe),
+                Ok(dts) => visit_includes(depth + 1, loader, arena, ipath, dts, out, scribe),
                 Err(e) => scribe.err(e),
             },
             // TODO:  distinguish UTF-8 errors here (Err(...) vs Ok(None))
