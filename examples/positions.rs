@@ -3,13 +3,9 @@ use odt::Arena;
 use odt::error::Scribe;
 use odt::fs::{Loader, LocalFileLoader};
 use odt::line::LineTableCache;
-use odt::merge::merge;
-use odt::node::Node;
+use odt::merge::{NodeChange, PropChange, merge};
 use odt::parse::parse_with_includes;
-use odt::parse::rules::TypedRule;
-use odt::path::NodePath;
 use pest::Span;
-use std::collections::HashSet;
 use std::path::PathBuf;
 
 #[derive(clap::Parser)]
@@ -30,15 +26,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arena = Arena::new();
     let mut scribe = Scribe::new(false);
     let dts = parse_with_includes(&loader, &arena, &input, &mut scribe);
-    let (tree, node_labels, node_decls) = merge(&dts, &mut scribe);
+    let (_tree, node_labels, node_changes, prop_changes) = merge(&dts, &mut scribe);
     _ = scribe.report(&loader, &mut std::io::stderr()); // print errors but continue
-    let node_paths = paths(&tree);
-
-    // we don't need `fn paths()` now that node_decls is returned from `merge()`
-    assert_eq!(
-        node_decls.keys().collect::<HashSet<_>>(),
-        node_paths.iter().collect::<HashSet<_>>()
-    );
 
     // show all source files used
     println!("source files:");
@@ -68,38 +57,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (path, line, col)
     }
 
-    // show locations of all nodes and properties
-    for path in node_paths {
-        let node_decl = node_decls[&path];
-        let (file, line, col) = source_location(&loader, &ltc, node_decl.span());
-        println!(
-            "node {path} last defined at {}:{line}:{col}",
-            file.display()
-        );
-        let node = tree.walk(path.segments()).unwrap();
-        for (name, prop) in node.properties() {
-            // Find the edit point to modify the value of this property.
-            let span = match prop.prop_value {
-                None => prop.semicolon.span(),
-                Some(propvalue) => propvalue.labeled_value[0].value.span(),
+    // show locations of all nodes
+    for (path, history) in node_changes {
+        println!("history of node {path}:");
+        let mut exists = false;
+        for change in history {
+            let verb = match change {
+                NodeChange::TopDelNode(_) | NodeChange::DelNode(_) => {
+                    exists = false;
+                    "deleted"
+                }
+                _ => {
+                    if exists {
+                        "updated"
+                    } else {
+                        exists = true;
+                        "created"
+                    }
+                }
             };
-            let (file, line, col) = source_location(&loader, &ltc, span);
-            println!("  {name} defined at {}:{line}:{col}", file.display());
+            let (file, line, col) = source_location(&loader, &ltc, change.span());
+            println!("  {verb} at {}:{line}:{col}", file.display());
         }
         println!();
     }
-    Ok(())
-}
 
-fn paths<P>(root: &Node<P>) -> Vec<NodePath> {
-    let mut out = vec![];
-    _paths(root, NodePath::root(), &mut out);
-    out
-}
-
-fn _paths<P>(node: &Node<P>, path: NodePath, out: &mut Vec<NodePath>) {
-    out.push(path.clone());
-    for (name, child) in node.children() {
-        _paths(child, path.join(name), out);
+    // show locations of all properties
+    for (path, history) in prop_changes {
+        println!("history of property {path}:");
+        let mut exists = false;
+        for change in history {
+            let verb = match change {
+                PropChange::DelProp(_) | PropChange::TopDelNode(_) | PropChange::DelNode(_) => {
+                    exists = false;
+                    "deleted"
+                }
+                _ => {
+                    if exists {
+                        "updated"
+                    } else {
+                        exists = true;
+                        "created"
+                    }
+                }
+            };
+            let (file, line, col) = source_location(&loader, &ltc, change.span());
+            println!("  {verb} at {}:{line}:{col}", file.display());
+        }
+        println!();
     }
+
+    Ok(())
 }
