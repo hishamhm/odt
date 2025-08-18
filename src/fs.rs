@@ -105,7 +105,7 @@ impl Loader for DummyLoader {
 /// A stateful helper for loading source files from a list of include directories to be searched.
 pub struct LocalFileLoader {
     /// directories to search
-    search_path: Vec<PathBuf>,
+    search_path: Vec<(PathBuf, PathBuf)>,
     /// cache of previously loaded files
     file_contents: Mutex<HashMap<PathBuf, Option<Vec<u8>>>>,
     /// existing parent directories of files observed not to exist
@@ -117,6 +117,14 @@ impl LocalFileLoader {
     pub const STDIN: &str = "<stdin>";
 
     pub fn new(search_path: Vec<PathBuf>) -> Self {
+        let search_path = search_path
+            .into_iter()
+            .map(|p| (PathBuf::new(), p))
+            .collect();
+        Self::new_with_prefixed_path(search_path)
+    }
+
+    pub fn new_with_prefixed_path(search_path: Vec<(PathBuf, PathBuf)>) -> Self {
         Self {
             search_path,
             file_contents: Default::default(),
@@ -145,11 +153,16 @@ impl LocalFileLoader {
 
 impl Loader for LocalFileLoader {
     fn find(&self, relative_to: Option<&Path>, included_path: &Path) -> Option<(&Path, &[u8])> {
-        let search_path = self.search_path.iter().map(PathBuf::as_ref);
-        for dir in relative_to.into_iter().chain(search_path) {
-            let path = dir.join(included_path);
-            if let Some(result) = self.read(path) {
+        if let Some(dir) = relative_to {
+            if let Some(result) = self.read(dir.join(included_path)) {
                 return Some(result);
+            }
+        }
+        for (prefix, dir) in &self.search_path {
+            if let Ok(suffix) = included_path.strip_prefix(prefix) {
+                if let Some(result) = self.read(dir.join(suffix)) {
+                    return Some(result);
+                }
             }
         }
         None
