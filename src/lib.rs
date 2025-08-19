@@ -26,6 +26,16 @@ pub fn compile(
     eval::eval(tree, node_labels, loader, scribe)
 }
 
+pub fn compile_result(
+    loader: &impl fs::Loader,
+    arena: &Arena,
+    dts_paths: &[&std::path::Path],
+) -> Result<BinaryNode, error::SourceError> {
+    let mut scribe = error::Scribe::new(false);
+    let r = compile(loader, arena, dts_paths, &mut scribe);
+    scribe.collect().map(|_| r)
+}
+
 pub fn merge<'a>(
     loader: &'a impl fs::Loader,
     arena: &'a Arena,
@@ -35,4 +45,14 @@ pub fn merge<'a>(
     let dts = parse::parse_concat_with_includes(loader, arena, dts_paths, scribe);
     let tree = merge::merge(&dts, scribe).0;
     eval::resolve_incbin_paths(loader, arena, tree, scribe)
+}
+
+pub fn merge_result<'a>(
+    loader: &'a impl fs::Loader,
+    arena: &'a Arena,
+    dts_paths: &[&std::path::Path],
+) -> Result<SourceNode<'a>, error::SourceError> {
+    let mut scribe = error::Scribe::new(false);
+    let r = merge(loader, arena, dts_paths, &mut scribe);
+    scribe.collect().map(|_| r)
 }

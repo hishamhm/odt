@@ -115,6 +115,13 @@ impl Scribe {
         (warnings, errors)
     }
 
+    /// Extract the first logged error, if any.
+    pub fn collect(self) -> Result<(), SourceError> {
+        let (_warnings, mut errors) = self.into_inner();
+        errors.truncate(1);
+        errors.pop().map_or(Ok(()), Err)
+    }
+
     /// Print the logged warning and errors to the supplied sink.
     /// (Warnings are printed only if no errors occurred.)
     /// Returns false if errors occurred, or true otherwise.
