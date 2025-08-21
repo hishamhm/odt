@@ -1,6 +1,6 @@
 [package]
 name = "odt"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "devicetree tools"
 repository = "https://github.com/a6f/odt"
@@ -23,10 +23,6 @@ wrapping-arithmetic = []
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
-
-[[bin]]
-name = "cargo-dtc"
-required-features = ["cli"]
 
 [[bin]]
 name = "dtc"
