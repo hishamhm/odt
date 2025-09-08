@@ -29,11 +29,9 @@ struct Args {
     #[arg(short = 'd', long, value_name = "path")]
     out_dependency: Option<PathBuf>,
 
-    /// Add a directory to the include search path.
-    /// If the value has the form 'crate=dir', then directory 'dir' is only
-    /// searched for the remainder of included paths which begin with 'crate/'.
+    /// Add a directory to the include search path
     #[arg(short = 'i', long, value_name = "path")]
-    include: Vec<String>,
+    include: Vec<PathBuf>,
 
     #[arg(short = 'W', long)]
     treat_warnings_as_errors: bool,
@@ -64,7 +62,7 @@ pub fn dtc_main(
 
 fn dtb_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     use odt::fs::{Loader, LocalFileLoader};
-    let loader = LocalFileLoader::new(vec![]);
+    let loader = LocalFileLoader::new(args.include);
     let input = args.input_path.unwrap_or(LocalFileLoader::STDIN.into());
     let Some((_path, data)) = loader.read(input.clone()) else {
         panic!("can't read {input:?}");
@@ -93,15 +91,7 @@ fn dtb_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
 fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     use odt::fs::{Loader, LocalFileLoader};
-    let search_path = args
-        .include
-        .into_iter()
-        .map(|s| match s.split_once('=') {
-            Some((p, d)) => (PathBuf::from(p), PathBuf::from(d)),
-            None => (PathBuf::new(), PathBuf::from(s)),
-        })
-        .collect();
-    let loader = LocalFileLoader::new_with_prefixed_path(search_path);
+    let loader = LocalFileLoader::new(args.include);
     let input = args.input_path.unwrap_or(LocalFileLoader::STDIN.into());
     let arena = odt::Arena::new();
     let mut scribe = odt::error::Scribe::new(args.treat_warnings_as_errors);
