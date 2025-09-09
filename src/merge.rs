@@ -68,6 +68,7 @@ pub fn merge<'i>(
     let mut node_labels = LabelMap::new();
     let mut node_changes = NodeChanges::new();
     let mut prop_changes = PropChanges::new();
+    let rootpath = NodePath::root();
     for top_def in dts.top_def {
         match top_def {
             TopDef::Header(_) => (),      // ignored
@@ -77,7 +78,7 @@ pub fn merge<'i>(
             TopDef::TopNode(topnode) => {
                 let path = match topnode.top_node_name {
                     TopNodeName::NodeReference(noderef) => {
-                        match LabelResolver(&node_labels, &root).resolve(noderef) {
+                        match LabelResolver(&node_labels, &root).resolve(&rootpath, noderef) {
                             Ok(path) => path,
                             Err(e) => {
                                 scribe.err(e);
@@ -110,7 +111,7 @@ pub fn merge<'i>(
             }
             TopDef::TopDelNode(topdelnode) => {
                 let noderef = topdelnode.node_reference;
-                match LabelResolver(&node_labels, &root).resolve(noderef) {
+                match LabelResolver(&node_labels, &root).resolve(&rootpath, noderef) {
                     Ok(path) => {
                         let Some(node) = root.walk_mut(path.segments()) else {
                             panic!("deleting nonexistent node {path}");

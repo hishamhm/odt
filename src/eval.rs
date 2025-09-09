@@ -169,7 +169,7 @@ fn visit_phandle_references<P>(
                 if let Value::Cells(cells) = labeled_value.value {
                     for label_or_cell in cells.label_or_cell {
                         if let LabelOrCell::Cell(Cell::NodeReference(phandle)) = label_or_cell {
-                            match labels.resolve(phandle) {
+                            match labels.resolve(path, phandle) {
                                 Ok(target) => {
                                     need_phandles.replace(target);
                                 }
@@ -204,7 +204,7 @@ fn node_phandle<P>(
     // expects Fn, not FnMut.  Work around that with a Cell.
     let phandle_is_self_reference = std::cell::Cell::new(false);
     let lookup_phandle = |noderef: &NodeReference| {
-        if &labels.resolve(noderef)? != path {
+        if &labels.resolve(path, noderef)? != path {
             Err(propvalue.err("phandle expression cannot reference another phandle"))
         } else {
             phandle_is_self_reference.set(true);
@@ -260,13 +260,14 @@ fn evaluate_expressions(
 ) -> BinaryNode {
     let old = root.clone();
     let labels = &LabelResolver(node_labels, &old);
-    let lookup_label = |noderef: &NodeReference| labels.resolve(noderef);
-    let lookup_phandle =
-        |noderef: &NodeReference| Ok(*phandles.get(&labels.resolve(noderef)?).unwrap());
     let read_file = |p: &Path| read_file(p);
-    let mut eval = |prop: &Prop| match prop.prop_value {
+    let mut eval = |loc: &NodePath, prop: &Prop| match prop.prop_value {
         None => vec![],
         Some(propvalue) => {
+            let lookup_label = |noderef: &NodeReference| labels.resolve(loc, noderef);
+            let lookup_phandle = |noderef: &NodeReference| {
+                Ok(*phandles.get(&labels.resolve(loc, noderef)?).unwrap())
+            };
             match evaluate_propvalue(propvalue, lookup_label, lookup_phandle, read_file) {
                 Ok(v) => v,
                 Err(e) => {
@@ -278,7 +279,7 @@ fn evaluate_expressions(
             }
         }
     };
-    root.map_values(&mut eval)
+    root.map_located_values(&NodePath::root(), &mut eval)
 }
 
 // TODO:  Accept Scribe here as well.  It's probably not useful to report more than one error, or
@@ -636,6 +637,7 @@ fn test_eval() {
         include_str!("testdata/phandle.dts"),
         #[cfg(feature = "wrapping-arithmetic")]
         include_str!("testdata/random_expressions.dts"),
+        include_str!("testdata/references.dts"),
     ] {
         let loader = crate::fs::DummyLoader;
         let arena = crate::Arena::new();
@@ -646,17 +648,40 @@ fn test_eval() {
         assert!(scribe.report(&loader, &mut std::io::stderr()));
         let check = tree.get_child("check").unwrap_or(&tree);
         for (name, value) in check.properties() {
-            assert_eq!(
-                value.len(),
-                8,
-                "property {name} has wrong shape; should be <expected computed>"
-            );
-            let left = u32::from_be_bytes(value[0..4].try_into().unwrap());
-            let right = u32::from_be_bytes(value[4..8].try_into().unwrap());
-            assert_eq!(
-                left, right,
-                "property {name} did not evaluate to two equal values"
-            );
+            if let Some((s1, s2)) = split_strs(value) {
+                assert_eq!(
+                    s1, s2,
+                    "property {name} did not evaluate to two equal strings"
+                );
+            } else if value.len() == 8 {
+                // Special-case two u32 cells.
+                let left = u32::from_be_bytes(value[0..4].try_into().unwrap());
+                let right = u32::from_be_bytes(value[4..8].try_into().unwrap());
+                assert_eq!(
+                    left, right,
+                    "property {name} did not evaluate to two equal cells"
+                );
+            } else {
+                let mid = value.len() / 2;
+                assert_eq!(
+                    &value[..mid],
+                    &value[mid..],
+                    "property {name} did not evaluate to two equal byte strings"
+                );
+            }
         }
+    }
+}
+
+#[cfg(test)]
+fn split_strs(bytes: &[u8]) -> Option<(&str, &str)> {
+    let v: Vec<&[u8]> = bytes.split(|b| *b == 0).collect();
+    if v.len() == 3 && v[2].is_empty() {
+        Some((
+            core::str::from_utf8(v[0]).ok()?,
+            core::str::from_utf8(v[1]).ok()?,
+        ))
+    } else {
+        None
     }
 }

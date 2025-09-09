@@ -1,3 +1,4 @@
+use crate::path::NodePath;
 use core::fmt::{Display, Formatter, Write};
 use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
@@ -107,6 +108,32 @@ impl<P> Node<P> {
         let children = children
             .into_iter()
             .map(|(k, v)| (k, v.map_values(f)))
+            .collect::<LinkedHashMap<String, Node<T>>>();
+        Node::<T> {
+            labels,
+            properties,
+            children,
+        }
+    }
+
+    /// Like `map_values()`, but provide the callback with the node path.
+    pub fn map_located_values<T>(
+        self,
+        loc: &NodePath,
+        f: &mut impl FnMut(&NodePath, P) -> T,
+    ) -> Node<T> {
+        let Self {
+            labels,
+            properties,
+            children,
+        } = self;
+        let properties = properties
+            .into_iter()
+            .map(|(k, v)| (k, f(loc, v)))
+            .collect::<LinkedHashMap<String, T>>();
+        let children = children
+            .into_iter()
+            .map(|(k, v)| (k.clone(), v.map_located_values(&loc.join(&k), f)))
             .collect::<LinkedHashMap<String, Node<T>>>();
         Node::<T> {
             labels,
