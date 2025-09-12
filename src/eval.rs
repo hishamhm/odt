@@ -1,39 +1,148 @@
 //! Facilities for evaluating expressions and phandle references in a devicetree.
 
-use crate::error::SourceError;
+use crate::error::{Scribe, SourceError};
+use crate::fs::Loader;
 use crate::label::{LabelMap, LabelResolver};
-use crate::parse::gen::*;
-use crate::parse::{SpanExt, TypedRuleExt};
+use crate::parse::rules::*;
+use crate::parse::{SpanExt, TypedRuleExt, parse_quoted_string};
 use crate::path::NodePath;
-use crate::{BinaryNode, SourceNode};
+use crate::{Arena, BinaryNode, SourceNode};
 use core::str::CharIndices;
 use hashlink::{LinkedHashMap, LinkedHashSet};
 use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 
 /// Assigns phandles and evaluates expressions.
-/// Call with the output of `crate::merge::merge()`.
-pub fn eval(tree: SourceNode, node_labels: LabelMap) -> Result<BinaryNode, SourceError> {
-    let phandles = assign_phandles(&tree, &node_labels)?;
-    let mut tree = evaluate_expressions(tree, &node_labels, &phandles)?;
+/// Call with the output of `crate::merge::merge()` or `resolve_incbin_paths()`.
+pub fn eval(
+    tree: SourceNode,
+    node_labels: LabelMap,
+    loader: &impl Loader,
+    scribe: &mut Scribe,
+) -> BinaryNode {
+    let phandles = assign_phandles(&tree, &node_labels, scribe);
+    let read_file = |path: &Path| match loader.read(path.to_owned()) {
+        Some((_, data)) => Ok(data.to_vec()),
+        None => Err(SourceError::new_unattributed(format!(
+            "can't load file {path:?}"
+        ))),
+    };
+    let mut tree = evaluate_expressions(tree, &node_labels, &phandles, read_file, scribe);
     // poke assigned phandle values into the final tree
     for (path, phandle) in phandles {
         tree.walk_mut(path.segments())
             .unwrap()
             .set_property("phandle", phandle.to_be_bytes().into());
     }
-    Ok(tree)
+    tree
+}
+
+fn path_from_bytes(bytes: &[u8]) -> PathBuf {
+    #[cfg(not(unix))]
+    return PathBuf::from(String::from_utf8_lossy(&bytes).into_owned());
+    #[cfg(unix)]
+    return PathBuf::from(&<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(bytes));
+}
+
+/// Locate all files referenced by incbin directives, cache their contents, and rewrite their
+/// source nodes to cwd-relative or absolute paths (rather than relative to the including file).
+/// Call with the output of `crate::merge::merge()`.
+pub fn resolve_incbin_paths<'a>(
+    loader: &'a impl Loader,
+    arena: &'a Arena,
+    tree: SourceNode<'a>,
+    scribe: &mut Scribe,
+) -> SourceNode<'a> {
+    let mut map_v = |v: &'a Value| match v {
+        Value::Incbin(incbin) => {
+            let path_bytes = match incbin.incbin_args.quoted_string.unescape() {
+                Err(e) => {
+                    scribe.err(e);
+                    return v;
+                }
+                Ok(bytes) => bytes,
+            };
+            let path = path_from_bytes(&path_bytes);
+            let buffer = incbin.span().get_input().as_bytes().as_ptr_range();
+            // This may return None if the paths were previously rewritten by this function.
+            let source = loader.path_of_buffer(buffer);
+            let dir = source
+                .as_deref()
+                .and_then(Path::parent)
+                .unwrap_or(Path::new(""));
+            match loader.find(dir, &path) {
+                Some((found, _)) => {
+                    if found == path {
+                        return v;
+                    }
+                    // TODO: check if this round-trips a UTF-8 path.
+                    let new_path_bytes: Vec<u8> = found
+                        .to_string_lossy()
+                        .bytes()
+                        .flat_map(std::ascii::escape_default)
+                        .collect();
+                    let new_path = String::from_utf8_lossy(&new_path_bytes);
+                    let quoted_string = arena.alloc_str(&format!("\"{new_path}\""));
+                    let quoted_string = parse_quoted_string(quoted_string, arena).unwrap();
+                    let incbin_args = arena.alloc(IncbinArgs {
+                        quoted_string,
+                        ..*incbin.incbin_args
+                    });
+                    let incbin = arena.alloc(Incbin {
+                        incbin_args,
+                        ..**incbin
+                    });
+                    // XXX  This doesn't work for DTS output, because OptionDisplay calls
+                    // PropValue::str(), which doesn't see the inner span edits.
+                    &*arena.alloc(Value::Incbin(incbin))
+                }
+                None => {
+                    scribe.err(incbin.err(format!("/incbin/ {path:?}: file not found")));
+                    v
+                }
+            }
+        }
+        other => other,
+    };
+    let mut map_pv = |pv: &'a PropValue| -> &'a PropValue {
+        let mut v = pv.labeled_value.to_vec();
+        for lv in v.iter_mut() {
+            *lv = arena.alloc(LabeledValue {
+                value: map_v(lv.value),
+                ..**lv
+            });
+        }
+        arena.alloc(PropValue {
+            labeled_value: arena.alloc_slice_copy(&v),
+            ..*pv
+        })
+    };
+    let mut map_p = |p: &'a Prop<'a>| match p.prop_value {
+        Some(pv) if contains_incbin(pv) => arena.alloc(Prop {
+            prop_value: Some(map_pv(pv)),
+            ..*p
+        }),
+        _ => p,
+    };
+    tree.map_values(&mut map_p)
+}
+
+fn contains_incbin(pv: &PropValue) -> bool {
+    pv.labeled_value
+        .iter()
+        .any(|lv| matches!(lv.value, Value::Incbin(_)))
 }
 
 type PhandleMap = LinkedHashMap<NodePath, u32>;
 
-fn assign_phandles(root: &SourceNode, node_labels: &LabelMap) -> Result<PhandleMap, SourceError> {
+fn assign_phandles(root: &SourceNode, node_labels: &LabelMap, scribe: &mut Scribe) -> PhandleMap {
     let labels = &LabelResolver(node_labels, root);
     // Find the targets of all phandle references.
     let mut need_phandles = LinkedHashSet::<NodePath>::new();
-    visit_phandle_references(labels, root, &NodePath::root(), &mut need_phandles)?;
+    visit_phandle_references(labels, root, &NodePath::root(), &mut need_phandles, scribe);
     // Find existing phandle properties.
     let mut phandles = vec![];
-    visit_node_phandles(root, &NodePath::root(), labels, &mut phandles)?;
+    visit_node_phandles(root, &NodePath::root(), labels, &mut phandles, scribe);
     // TODO:  Report an error for duplicate phandles.
     // `visit_node_phandles()` could collect into a set keyed on phandle value.
     let taken: std::collections::HashSet<u32> = phandles.iter().map(|(_, v)| *v).collect();
@@ -49,7 +158,7 @@ fn assign_phandles(root: &SourceNode, node_labels: &LabelMap) -> Result<PhandleM
         phandles.insert(path, next_phandle);
         next_phandle += 1;
     }
-    Ok(phandles)
+    phandles
 }
 
 fn visit_phandle_references<P>(
@@ -57,15 +166,20 @@ fn visit_phandle_references<P>(
     node: &SourceNode,
     path: &NodePath,
     need_phandles: &mut LinkedHashSet<NodePath>,
-) -> Result<(), SourceError> {
+    scribe: &mut Scribe,
+) {
     for (_, prop) in node.properties() {
         if let Some(propvalue) = prop.prop_value {
             for labeled_value in propvalue.labeled_value {
                 if let Value::Cells(cells) = labeled_value.value {
                     for label_or_cell in cells.label_or_cell {
                         if let LabelOrCell::Cell(Cell::NodeReference(phandle)) = label_or_cell {
-                            let target = labels.resolve(phandle)?;
-                            need_phandles.replace(target);
+                            match labels.resolve(path, phandle) {
+                                Ok(target) => {
+                                    need_phandles.replace(target);
+                                }
+                                Err(e) => scribe.err(e),
+                            }
                         }
                     }
                 }
@@ -74,9 +188,54 @@ fn visit_phandle_references<P>(
     }
     for (name, child) in node.children() {
         let child_path = path.join(name);
-        visit_phandle_references(labels, child, &child_path, need_phandles)?;
+        visit_phandle_references(labels, child, &child_path, need_phandles, scribe);
     }
-    Ok(())
+}
+
+fn node_phandle<P>(
+    node: &SourceNode,
+    path: &NodePath,
+    labels: &LabelResolver<P>,
+) -> Result<Option<u32>, SourceError> {
+    let Some(prop) = node.get_property("phandle") else {
+        return Ok(None);
+    };
+    // Each expression must have length 4, and may contain zero phandle references, or one,
+    // pointing to itself.
+    let Some(propvalue) = prop.prop_value else {
+        return Err(prop.err("phandle property is empty"));
+    };
+    // We want to know whether `lookup_phandle` is called, but `evaluate_propvalue()`
+    // expects Fn, not FnMut.  Work around that with a Cell.
+    let phandle_is_self_reference = std::cell::Cell::new(false);
+    let lookup_phandle = |noderef: &NodeReference| {
+        if &labels.resolve(path, noderef)? != path {
+            Err(propvalue.err("phandle expression cannot reference another phandle"))
+        } else {
+            phandle_is_self_reference.set(true);
+            Ok(0)
+        }
+    };
+    let phandle = evaluate_propvalue(
+        propvalue,
+        |_| Err(propvalue.err("phandle expression cannot use a string node reference")),
+        lookup_phandle,
+        // dtc allows this, but there's no need for it.
+        |_| Err(propvalue.err("phandle expression cannot use /incbin/")),
+    )?;
+    let n = phandle.len();
+    if n != 4 {
+        return Err(propvalue.err(format!("phandles must be u32, got {n} bytes")));
+    };
+    // `visit_phandle_references()` will find self-references, so we omit them.
+    if phandle_is_self_reference.get() {
+        return Ok(None);
+    }
+    let phandle = u32::from_be_bytes(phandle.try_into().unwrap());
+    if phandle == 0 || phandle == 0xffff_ffff {
+        return Err(propvalue.err(format!("phandle has reserved value {phandle:#x}")));
+    }
+    Ok(Some(phandle))
 }
 
 fn visit_node_phandles<P>(
@@ -84,70 +243,57 @@ fn visit_node_phandles<P>(
     path: &NodePath,
     labels: &LabelResolver<P>,
     out: &mut Vec<(NodePath, u32)>,
-) -> Result<(), SourceError> {
-    if let Some(prop) = node.get_property("phandle") {
-        // Each expression must have length 4, and may contain zero phandle references, or one,
-        // pointing to itself.
-        let Some(propvalue) = prop.prop_value else {
-            return Err(prop.err("phandle property is empty"));
-        };
-        // We want to know whether `lookup_phandle` is called, but `evaluate_propvalue()`
-        // expects Fn, not FnMut.  Work around that with a Cell.
-        let phandle_is_self_reference = std::cell::Cell::new(false);
-        let lookup_phandle = |noderef: &NodeReference| {
-            if &labels.resolve(noderef)? != path {
-                Err(propvalue.err("phandle expression cannot reference another phandle"))
-            } else {
-                phandle_is_self_reference.set(true);
-                Ok(0)
-            }
-        };
-        let phandle = evaluate_propvalue(
-            propvalue,
-            |_| Err(propvalue.err("phandle expression cannot use a string node reference")),
-            lookup_phandle,
-        )?;
-        let n = phandle.len();
-        if n != 4 {
-            return Err(propvalue.err(format!("phandles must be u32, got {n} bytes")));
-        };
-        // `visit_phandle_references()` will find self-references, so we omit them.
-        if !phandle_is_self_reference.get() {
-            let phandle = u32::from_be_bytes(phandle.try_into().unwrap());
-            if phandle == 0 || phandle == 0xffff_ffff {
-                return Err(propvalue.err(format!("phandle has reserved value {phandle:#x}")));
-            }
-            out.push((path.clone(), phandle));
-        }
+    scribe: &mut Scribe,
+) {
+    match node_phandle(node, path, labels) {
+        Ok(Some(phandle)) => out.push((path.clone(), phandle)),
+        Ok(None) => (),
+        Err(e) => scribe.err(e),
     }
     for (name, child) in node.children() {
         let child_path = path.join(name);
-        visit_node_phandles(child, &child_path, labels, out)?;
+        visit_node_phandles(child, &child_path, labels, out, scribe);
     }
-    Ok(())
 }
 
 fn evaluate_expressions(
     root: SourceNode,
     node_labels: &LabelMap,
     phandles: &PhandleMap,
-) -> Result<BinaryNode, SourceError> {
+    read_file: impl Fn(&Path) -> Result<Vec<u8>, SourceError>,
+    scribe: &mut Scribe,
+) -> BinaryNode {
     let old = root.clone();
     let labels = &LabelResolver(node_labels, &old);
-    let lookup_label = |noderef: &NodeReference| labels.resolve(noderef);
-    let lookup_phandle =
-        |noderef: &NodeReference| Ok(*phandles.get(&labels.resolve(noderef)?).unwrap());
-    let eval = |prop: &Prop| match prop.prop_value {
-        None => Ok(vec![]),
-        Some(propvalue) => evaluate_propvalue(propvalue, lookup_label, lookup_phandle),
+    let read_file = |p: &Path| read_file(p);
+    let mut eval = |loc: &NodePath, prop: &Prop| match prop.prop_value {
+        None => vec![],
+        Some(propvalue) => {
+            let lookup_label = |noderef: &NodeReference| labels.resolve(loc, noderef);
+            let lookup_phandle = |noderef: &NodeReference| {
+                Ok(*phandles.get(&labels.resolve(loc, noderef)?).unwrap())
+            };
+            match evaluate_propvalue(propvalue, lookup_label, lookup_phandle, read_file) {
+                Ok(v) => v,
+                Err(e) => {
+                    scribe.err(e);
+                    // TODO:  Consider returning `node::Node<Result<Vec<u8>, SourceError>>`
+                    // instead of this in-band signaling.
+                    b"<ERROR>\0".to_vec()
+                }
+            }
+        }
     };
-    root.map_values(&eval)
+    root.map_located_values(&NodePath::root(), &mut eval)
 }
 
+// TODO:  Accept Scribe here as well.  It's probably not useful to report more than one error, or
+// perform partial evaluation, but we might want to return warnings, e.g. about integer overflow.
 fn evaluate_propvalue(
     propvalue: &PropValue,
     lookup_label: impl Fn(&NodeReference) -> Result<NodePath, SourceError>,
     lookup_phandle: impl Fn(&NodeReference) -> Result<u32, SourceError>,
+    read_file: impl Fn(&Path) -> Result<Vec<u8>, SourceError>,
 ) -> Result<Vec<u8>, SourceError> {
     let mut r = vec![];
     for labeled_value in propvalue.labeled_value {
@@ -221,7 +367,18 @@ fn evaluate_propvalue(
                 }
             }
             Value::Incbin(incbin) => {
-                unimplemented!("{}", incbin.err("/incbin/ unimplemented"));
+                if !incbin.incbin_args.numeric_literal.is_empty() {
+                    return Err(incbin.err("/incbin/ (..., offset, length) unimplemented"));
+                }
+                let path_bytes = incbin.incbin_args.quoted_string.unescape()?;
+                let path = path_from_bytes(&path_bytes);
+                // TODO:  This may repeat an error already reported by `resolve_incbin_paths()`.
+                let bin = read_file(&path)?;
+                if r.is_empty() {
+                    r = bin;
+                } else {
+                    r.extend(bin);
+                }
             }
         }
     }
@@ -388,11 +545,7 @@ impl EvalExt for TernaryPrec<'_> {
             return Ok(left);
         };
         // Note that subexpression evaluation is lazy, unlike dtc.
-        if left != 0 {
-            mid.eval()
-        } else {
-            right.eval()
-        }
+        if left != 0 { mid.eval() } else { right.eval() }
     }
 }
 
@@ -454,18 +607,10 @@ fn eval_binary_op(left: u64, op: &str, right: u64) -> Result<u64, &'static str> 
         check(a.checked_mul(b).ok_or(a.wrapping_mul(b)))
     }
     fn shl(a: u64, b: u64) -> u64 {
-        if b < 64 {
-            a << b
-        } else {
-            0
-        }
+        if b < 64 { a << b } else { 0 }
     }
     fn shr(a: u64, b: u64) -> u64 {
-        if b < 64 {
-            a >> b
-        } else {
-            0
-        }
+        if b < 64 { a >> b } else { 0 }
     }
     match op {
         "+" => add(left, right).ok_or("arithmetic overflow"),
@@ -498,24 +643,51 @@ fn test_eval() {
         include_str!("testdata/phandle.dts"),
         #[cfg(feature = "wrapping-arithmetic")]
         include_str!("testdata/random_expressions.dts"),
+        include_str!("testdata/references.dts"),
     ] {
+        let loader = crate::fs::DummyLoader;
         let arena = crate::Arena::new();
         let dts = crate::parse::parse_typed(source, &arena).unwrap();
-        let (tree, node_labels, _) = crate::merge::merge(dts).unwrap();
-        let tree = eval(tree, node_labels).unwrap();
+        let mut scribe = Scribe::new(true);
+        let (tree, node_labels, _, _) = crate::merge::merge(dts, &mut scribe);
+        let tree = eval(tree, node_labels, &loader, &mut scribe);
+        assert!(scribe.report(&loader, &mut std::io::stderr()));
         let check = tree.get_child("check").unwrap_or(&tree);
         for (name, value) in check.properties() {
-            assert_eq!(
-                value.len(),
-                8,
-                "property {name} has wrong shape; should be <expected computed>"
-            );
-            let left = u32::from_be_bytes(value[0..4].try_into().unwrap());
-            let right = u32::from_be_bytes(value[4..8].try_into().unwrap());
-            assert_eq!(
-                left, right,
-                "property {name} did not evaluate to two equal values"
-            );
+            if let Some((s1, s2)) = split_strs(value) {
+                assert_eq!(
+                    s1, s2,
+                    "property {name} did not evaluate to two equal strings"
+                );
+            } else if value.len() == 8 {
+                // Special-case two u32 cells.
+                let left = u32::from_be_bytes(value[0..4].try_into().unwrap());
+                let right = u32::from_be_bytes(value[4..8].try_into().unwrap());
+                assert_eq!(
+                    left, right,
+                    "property {name} did not evaluate to two equal cells"
+                );
+            } else {
+                let mid = value.len() / 2;
+                assert_eq!(
+                    &value[..mid],
+                    &value[mid..],
+                    "property {name} did not evaluate to two equal byte strings"
+                );
+            }
         }
+    }
+}
+
+#[cfg(test)]
+fn split_strs(bytes: &[u8]) -> Option<(&str, &str)> {
+    let v: Vec<&[u8]> = bytes.split(|b| *b == 0).collect();
+    if v.len() == 3 && v[2].is_empty() {
+        Some((
+            core::str::from_utf8(v[0]).ok()?,
+            core::str::from_utf8(v[1]).ok()?,
+        ))
+    } else {
+        None
     }
 }

@@ -2,7 +2,7 @@ use clap::Parser as _;
 use std::path::PathBuf;
 
 #[derive(clap::Parser)]
-#[command(version)]
+#[command(version, args_override_self = true)]
 struct Args {
     /// Input files
     #[arg(value_name = "input_path")]

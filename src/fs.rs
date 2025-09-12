@@ -67,6 +67,39 @@ pub trait Loader {
     /// Given a memory range within a buffer cached by this loader, report the path of the
     /// corresponding file.
     fn path_of_buffer(&self, mem: Range<*const u8>) -> Option<PathBuf>;
+
+    /// Annotate an error with the path of a source file owned by this buffer.
+    fn annotate_error(&self, err: SourceError) -> SourceError {
+        if err.path().is_some() {
+            return err;
+        }
+        let path = self
+            .path_of_buffer(err.buffer())
+            .unwrap_or("<unknown>".into());
+        err.with_path(&path)
+    }
+}
+
+/// A do-nothing implementation for tests.
+pub struct DummyLoader;
+
+#[allow(unused_variables)]
+impl Loader for DummyLoader {
+    fn find(&self, relative_to: &Path, included_path: &Path) -> Option<(&Path, &[u8])> {
+        None
+    }
+    fn read(&self, path: PathBuf) -> Option<(&Path, &[u8])> {
+        None
+    }
+    fn positive_deps(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+    fn negative_deps(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+    fn path_of_buffer(&self, mem: Range<*const u8>) -> Option<PathBuf> {
+        None
+    }
 }
 
 /// A stateful helper for loading source files from a list of include directories to be searched.
@@ -91,9 +124,10 @@ impl LocalFileLoader {
         }
     }
 
-    fn track_parent_of_missing(&self, path: &Path) {
+    fn track_parent_of_missing(&self, mut path: &Path) {
         let mut parents_of_missing = self.parents_of_missing.lock().unwrap();
-        while let Some(path) = path.parent() {
+        while let Some(parent) = path.parent() {
+            path = parent;
             if path.as_os_str().is_empty() {
                 // final ancestor of a relative path is ""; translate to "."
                 parents_of_missing.insert(PathBuf::from("."));
@@ -106,17 +140,6 @@ impl LocalFileLoader {
                 return;
             }
         }
-    }
-
-    // TODO: move this to SourceError
-    pub fn with_path(&self, err: SourceError) -> SourceError {
-        if err.path().is_some() {
-            return err;
-        }
-        let path = self
-            .path_of_buffer(err.buffer())
-            .unwrap_or("<unknown>".into());
-        err.with_path(&path)
     }
 }
 

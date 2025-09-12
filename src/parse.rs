@@ -1,25 +1,25 @@
 //! Facilities for parsing DTS files and expanding "/include/" directives.
 
-use crate::error::SourceError;
-use crate::fs::Loader;
 use crate::Arena;
+use crate::error::{Scribe, SourceError};
+use crate::fs::Loader;
 use bumpalo::collections::Vec;
 use core::ops::Range;
-use gen::{Dts, DtsFile};
 use pest::iterators::Pair;
 use pest::{Parser, Span};
+use rules::{Dts, DtsFile, QuotedString, TopDef};
 use std::path::Path;
 
 #[derive(pest_derive::Parser, pestle::TypedRules)]
 #[grammar = "src/dts.pest"]
-#[typed_mod = "gen"]
+#[typed_mod = "rules"]
 pub struct DtsParser;
 
 /// This is pest's untyped grammar, which is convenient for clients that
 /// wish to visit every character of the input.
 pub type Parsed<'a> = Pair<'a, Rule>;
 
-pub fn parse_untyped(source: &str) -> Result<Parsed, SourceError> {
+pub fn parse_untyped(source: &str) -> Result<Parsed<'_>, SourceError> {
     let mut it = DtsParser::parse(Rule::DtsFile, source)?;
     let dtsfile = it.next().unwrap();
     assert_eq!(dtsfile.as_rule(), Rule::DtsFile);
@@ -33,13 +33,25 @@ pub fn parse_typed<'i>(source: &'i str, arena: &'i Arena) -> Result<&'i Dts<'i>,
     Ok(dtsfile.dts)
 }
 
+pub(crate) fn parse_quoted_string<'i>(
+    source: &'i str,
+    arena: &'i Arena,
+) -> Result<&'i QuotedString<'i>, SourceError> {
+    let mut it = DtsParser::parse(Rule::QuotedString, source)?;
+    let tree = it.next().unwrap();
+    assert_eq!(tree.as_rule(), Rule::QuotedString);
+    assert_eq!(it.next(), None);
+    Ok(QuotedString::build(tree, arena))
+}
+
 /// Parse the source file named by `path`.
 pub fn parse_with_includes<'a>(
     loader: &'a impl Loader,
     arena: &'a Arena,
     path: &Path,
-) -> Result<Dts<'a>, SourceError> {
-    parse_concat_with_includes(loader, arena, &[path])
+    scribe: &mut Scribe,
+) -> Dts<'a> {
+    parse_concat_with_includes(loader, arena, &[path], scribe)
 }
 
 /// Parse the concatenation of the source files named by `paths`.
@@ -47,60 +59,68 @@ pub fn parse_concat_with_includes<'a>(
     loader: &'a impl Loader,
     arena: &'a Arena,
     paths: &[&Path],
-) -> Result<Dts<'a>, SourceError> {
+    scribe: &mut Scribe,
+) -> Dts<'a> {
     let mut span = Span::new("", 0, 0).unwrap();
     let mut top_def = Vec::new_in(arena);
     for path in paths {
-        let Ok(Some((_, src))) = loader.read_utf8(path.into()) else {
-            // TODO:  presumably there is some kind of filesystem error we could propagate
-            return Err(SourceError::new_unattributed(format!(
-                "can't load file {path:?}"
-            )));
-        };
-        let dts = parse_typed(src, arena).map_err(|e| e.with_path(path))?;
-        if span.as_str().is_empty() {
-            span = dts._span;
+        match loader.read_utf8(path.into()) {
+            Ok(Some((_, src))) => match parse_typed(src, arena) {
+                Ok(dts) => {
+                    if span.as_str().is_empty() {
+                        span = dts._span;
+                    }
+                    visit_includes(1, loader, arena, path, dts, &mut top_def, scribe);
+                }
+                // TODO:  is with_path() needed here?
+                Err(e) => scribe.err(e.with_path(path)),
+            },
+            _ => {
+                // TODO:  presumably there is some kind of filesystem error we could propagate
+                scribe.err(SourceError::new_unattributed(format!(
+                    "can't load file {path:?}"
+                )));
+            }
         }
-        visit_includes(loader, arena, path, dts, &mut top_def)?;
     }
-    let out = Dts {
+    Dts {
         _span: span,
-        header: &[],
-        include: &[],
-        memreserve: &[],
         top_def: arena.alloc(top_def),
-    };
-    Ok(out)
+    }
 }
 
 fn visit_includes<'a>(
+    depth: usize,
     loader: &'a impl Loader,
     arena: &'a Arena,
     path: &Path,
     dts: &Dts<'a>,
-    out: &mut Vec<&'a gen::TopDef<'a>>,
-) -> Result<(), SourceError> {
+    out: &mut Vec<&'a rules::TopDef<'a>>,
+    scribe: &mut Scribe,
+) {
     let dir = path.parent().unwrap();
-    for include in dts.include {
+    for top_def in dts.top_def {
+        out.push(top_def);
+        let TopDef::Include(include) = top_def else {
+            continue;
+        };
+        // `dtc` has a different limit: it checks that no more than 200 files are parsed,
+        // regardless of nesting.
+        if depth >= 100 {
+            scribe.err(include.err("includes nested too deeply"));
+            return;
+        }
         let pathspan = include.quoted_string.trim_one();
         // The path is not unescaped in any way before use.
-        let Ok(Some((ipath, src))) = loader.find_utf8(dir, Path::new(pathspan.as_str())) else {
+        match loader.find_utf8(dir, Path::new(pathspan.as_str())) {
+            Ok(Some((ipath, src))) => match parse_typed(src, arena) {
+                Ok(dts) => visit_includes(depth + 1, loader, arena, ipath, dts, out, scribe),
+                Err(e) => scribe.err(e),
+            },
             // TODO:  distinguish UTF-8 errors here (Err(...) vs Ok(None))
-            return Err(pathspan.err("can't find include file on search path"));
-        };
-        let dts = parse_typed(src, arena)?;
-        visit_includes(loader, arena, ipath, dts, out)?;
+            _ => scribe.err(pathspan.err("can't find include file on search path")),
+        }
     }
-    if let Some(memres) = dts.memreserve.first() {
-        unimplemented!("{}", memres.err("unimplemented"));
-    }
-    out.extend(dts.top_def);
-    // TODO:  It may be useful to have a mode which prints the combined sources
-    // before tree operations.  Roughly:
-    //     for x in dts.top_def {
-    //         println!("{}", x.str());
-    //     }
-    Ok(())
 }
 
 // Implements the unstable method `str::substr_range()`.
@@ -127,11 +147,11 @@ pub trait SpanExt {
         let span = range.map(|r| span.get(r).unwrap()).unwrap_or(span);
         SourceError::new(message.into(), span)
     }
-    fn span(&self) -> Span;
+    fn span(&self) -> Span<'_>;
 }
 
 impl SpanExt for Span<'_> {
-    fn span(&self) -> Span {
+    fn span(&self) -> Span<'_> {
         *self
     }
 }
@@ -142,7 +162,7 @@ pub trait TypedRuleExt<'a> {
     fn trim_one(&self) -> Span<'a>;
 }
 
-impl<'a, T: gen::TypedRule<'a>> TypedRuleExt<'a> for T {
+impl<'a, T: rules::TypedRule<'a>> TypedRuleExt<'a> for T {
     fn err(&self, message: impl Into<String>) -> SourceError {
         self.span().err(message.into())
     }

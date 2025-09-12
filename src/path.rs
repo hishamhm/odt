@@ -1,16 +1,17 @@
 use core::fmt::{Debug, Display, Formatter};
 
-/// A portable subset of PathBuf needed for working with &{...} DTS path references.  The embedded
-/// string is normalized and always ends with a slash, simplifying `starts_with()` queries.
-#[derive(Clone, Eq, Hash, PartialEq)]
+/// A portable subset of PathBuf for working with &{...} DTS path references.
+/// Slashes are replaced with nulls, making the inherited `impl Ord` sort parents before children.
+/// The stored string is normalized and ends with a null, simplifying `starts_with()` queries.
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodePath(String);
 
 impl NodePath {
-    pub fn display(&self) -> &str {
+    pub fn display(&self) -> String {
         if self.is_root() {
-            "/"
+            "/".into()
         } else {
-            self.0.strip_suffix('/').unwrap()
+            self.0.strip_suffix('\0').unwrap().replace('\0', "/")
         }
     }
 
@@ -25,7 +26,7 @@ impl NodePath {
     }
 
     pub fn leaf(&self) -> &str {
-        self.0.rsplit_terminator('/').next().unwrap()
+        self.0.rsplit_terminator('\0').next().unwrap()
     }
 
     pub fn parent(&self) -> Self {
@@ -38,16 +39,16 @@ impl NodePath {
     pub fn push(&mut self, suffix: &str) {
         for segment in suffix.split('/').filter(|s| !s.is_empty()) {
             self.0.push_str(segment);
-            self.0.push('/');
+            self.0.push('\0');
         }
     }
 
     pub fn root() -> Self {
-        Self("/".into())
+        Self("\0".into())
     }
 
     pub fn segments(&self) -> impl Iterator<Item = &str> {
-        self.0.split_terminator('/').filter(|s| !s.is_empty())
+        self.0.split_terminator('\0').filter(|s| !s.is_empty())
     }
 
     pub fn starts_with(&self, prefix: &Self) -> bool {
@@ -57,12 +58,12 @@ impl NodePath {
 
 impl Debug for NodePath {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        Debug::fmt(&self.0, f)
+        Debug::fmt(&self.display(), f)
     }
 }
 
 impl Display for NodePath {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        Display::fmt(self.display(), f)
+        Display::fmt(&self.display(), f)
     }
 }

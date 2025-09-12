@@ -1,3 +1,4 @@
+use crate::path::NodePath;
 use core::fmt::{Display, Formatter, Write};
 use hashlink::linked_hash_map::Entry;
 use hashlink::{LinkedHashMap, LinkedHashSet};
@@ -86,11 +87,15 @@ impl<P> Node<P> {
         self.labels.replace(name.into());
     }
 
-    pub fn labels_as_display(&self) -> LabelsDisplay {
+    pub fn labels(&mut self) -> impl Iterator<Item = &String> {
+        self.labels.iter()
+    }
+
+    pub fn labels_as_display(&self) -> LabelsDisplay<'_> {
         LabelsDisplay(&self.labels)
     }
 
-    pub fn map_values<T, E>(self, f: &impl Fn(P) -> Result<T, E>) -> Result<Node<T>, E> {
+    pub fn map_values<T>(self, f: &mut impl FnMut(P) -> T) -> Node<T> {
         let Self {
             labels,
             properties,
@@ -98,17 +103,43 @@ impl<P> Node<P> {
         } = self;
         let properties = properties
             .into_iter()
-            .map(|(k, v)| Ok((k, f(v)?)))
-            .collect::<Result<LinkedHashMap<String, T>, E>>()?;
+            .map(|(k, v)| (k, f(v)))
+            .collect::<LinkedHashMap<String, T>>();
         let children = children
             .into_iter()
-            .map(|(k, v)| Ok((k, v.map_values(f)?)))
-            .collect::<Result<LinkedHashMap<String, Node<T>>, E>>()?;
-        Ok(Node::<T> {
+            .map(|(k, v)| (k, v.map_values(f)))
+            .collect::<LinkedHashMap<String, Node<T>>>();
+        Node::<T> {
             labels,
             properties,
             children,
-        })
+        }
+    }
+
+    /// Like `map_values()`, but provide the callback with the node path.
+    pub fn map_located_values<T>(
+        self,
+        loc: &NodePath,
+        f: &mut impl FnMut(&NodePath, P) -> T,
+    ) -> Node<T> {
+        let Self {
+            labels,
+            properties,
+            children,
+        } = self;
+        let properties = properties
+            .into_iter()
+            .map(|(k, v)| (k, f(loc, v)))
+            .collect::<LinkedHashMap<String, T>>();
+        let children = children
+            .into_iter()
+            .map(|(k, v)| (k.clone(), v.map_located_values(&loc.join(&k), f)))
+            .collect::<LinkedHashMap<String, Node<T>>>();
+        Node::<T> {
+            labels,
+            properties,
+            children,
+        }
     }
 }
 
@@ -126,7 +157,7 @@ pub trait OptionDisplay {
     fn fmt_opt(&self) -> Option<String>;
 }
 
-impl OptionDisplay for &crate::parse::gen::Prop<'_> {
+impl OptionDisplay for &crate::parse::rules::Prop<'_> {
     fn fmt_opt(&self) -> Option<String> {
         use crate::parse::TypedRuleExt;
         self.prop_value.map(|pv| pv.str().into())

@@ -100,7 +100,6 @@
 };
 
 /delete-node/ &{/};
-
 /delete-node/ &{/};
 
 &{/} {

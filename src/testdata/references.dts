@@ -1,0 +1,59 @@
+/dts-v1/;
+
+root: / {
+    check {
+        moved: dead {
+        };
+
+        postit: foo {
+            bar {
+                baz {
+                };
+            };
+        };
+    };
+};
+
+/delete-node/ &{./check/dead};
+
+root2: root3: &{.} {
+    check {
+        moved: alive {
+        };
+
+        child {
+        };
+    };
+
+    foo: foo2 {
+        bar {
+        };
+    };
+};
+
+/ {
+    check {
+        phandle = <0x21122112>;
+        check_ref_root = <&{/} 1>;
+        check_ref_label = <&postit 2>;
+        check_ref_self = <&{.} 0x21122112>;
+        check_ref_selfnorm = <&{./} 0x21122112>;
+        check_ref_selfrel = <&{./child} 3>;
+        check_ref_selfrel2 = <&{./foo/bar} 4>;
+        check_str_root = &root, "/";
+        check_str_root2 = &root2, "/";
+        check_str_root3 = &root3, "/";
+        check_str_self = &{.}, "/check";
+        check_str_selfnorm = &{.///}, "/check";
+        check_str_moved = &moved, "/check/alive";
+        check_str_label = &postit, "/check/foo";
+        check_str_bracelabel = &{postit}, "/check/foo";
+        check_str_bracenorm = &{postit/}, "/check/foo";
+        check_str_bracerel = &{postit/bar}, "/check/foo/bar";
+        check_str_selfrel = &{./foo}, "/check/foo";
+        check_str_selfrel2 = &{./foo/bar}, "/check/foo/bar";
+        check_str_selfrel3 = &{./foo/bar/baz}, "/check/foo/bar/baz";
+        check_str_global = &{foo}, "/foo2";
+        check_str_globalrel = &{foo/bar}, "/foo2/bar";
+    };
+};

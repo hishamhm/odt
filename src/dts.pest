@@ -36,7 +36,7 @@ newline = _{ "\n" | "\r\n" }
 DtsFile = {  SOI ~ Dts ~ EOI }
 
 /// Overall structure of a DTS file.
-Dts = { Header* ~ Include* ~ Memreserve* ~ TopDef* }
+Dts = { TopDef* }
 
 // DIFF: dtc accepts #line directives (as emitted by cpp)
 
@@ -51,21 +51,22 @@ SlashMemreserve = { "/memreserve/" }
 SlashOmitIfNoRef = { "/omit-if-no-ref/" }
 SlashPlugin = { "/plugin/" }
 
-// DIFF: dtc requires a "/dts-v1/;" header but we make it optional,
-//       to allow parsing included files with the same grammar.
+// DIFF: dtc requires a "/dts-v1/;" header but we make it optional and permit it
+//       to appear later, to allow parsing included files with the same grammar.
 Header = { Version ~ Plugin? }
 Version = { SlashDtsV1 ~ Semicolon }
 Plugin = { SlashPlugin ~ Semicolon }
 
-// DIFF: accepts /include/ anywhere, not just at file scope
+// DIFF: dtc accepts /include/ anywhere, not just at file scope
 Include = ${ SlashInclude ~ IncludeWhitespace ~ QuotedString }
 IncludeWhitespace = @{ WHITESPACE* }
 
+// DIFF: dtc requires /memreserve/ to precede all node definitions
 Memreserve = { Label* ~ SlashMemreserve ~ MemreserveArg ~ MemreserveArg ~ Semicolon }
 MemreserveArg = { ParenExpr | IntLiteral }
 
-// DIFF: dtc requires the first TopDef to be an unlabeled TopNode
-TopDef = { TopDelNode | TopOmitNode | TopNode }
+// DIFF: dtc requires the first definition to be an unlabeled TopNode
+TopDef = { Header | Include | Memreserve | TopDelNode | TopOmitNode | TopNode }
 TopDelNode = { SlashDeleteNode ~ NodeReference ~ Semicolon }
 TopOmitNode = { SlashOmitIfNoRef ~ NodeReference ~ Semicolon }
 
