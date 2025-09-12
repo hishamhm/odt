@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // show all labeled nodes
     println!("node labels:");
     for (label, path) in node_labels {
-        println!("  {} -> {}", label, path);
+        println!("  {label} -> {path}");
     }
     println!();
 

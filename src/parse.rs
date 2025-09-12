@@ -98,7 +98,7 @@ fn visit_includes<'a>(
     out: &mut Vec<&'a rules::TopDef<'a>>,
     scribe: &mut Scribe,
 ) {
-    let dir = Some(path.parent().unwrap());
+    let dir = path.parent().unwrap();
     for top_def in dts.top_def {
         out.push(top_def);
         let TopDef::Include(include) = top_def else {

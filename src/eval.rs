@@ -55,8 +55,6 @@ pub fn resolve_incbin_paths<'a>(
 ) -> SourceNode<'a> {
     let mut map_v = |v: &'a Value| match v {
         Value::Incbin(incbin) => {
-            let buffer = incbin.span().get_input().as_bytes().as_ptr_range();
-            let source = loader.path_of_buffer(buffer);
             let path_bytes = match incbin.incbin_args.quoted_string.unescape() {
                 Err(e) => {
                     scribe.err(e);
@@ -65,7 +63,14 @@ pub fn resolve_incbin_paths<'a>(
                 Ok(bytes) => bytes,
             };
             let path = path_from_bytes(&path_bytes);
-            match loader.find(source.as_deref().and_then(Path::parent), &path) {
+            let buffer = incbin.span().get_input().as_bytes().as_ptr_range();
+            // This may return None if the paths were previously rewritten by this function.
+            let source = loader.path_of_buffer(buffer);
+            let dir = source
+                .as_deref()
+                .and_then(Path::parent)
+                .unwrap_or(Path::new(""));
+            match loader.find(dir, &path) {
                 Some((found, _)) => {
                     if found == path {
                         return v;
@@ -367,7 +372,8 @@ fn evaluate_propvalue(
                 }
                 let path_bytes = incbin.incbin_args.quoted_string.unescape()?;
                 let path = path_from_bytes(&path_bytes);
-                let bin = read_file(&path).unwrap();
+                // TODO:  This may repeat an error already reported by `resolve_incbin_paths()`.
+                let bin = read_file(&path)?;
                 if r.is_empty() {
                     r = bin;
                 } else {
@@ -643,7 +649,7 @@ fn test_eval() {
         let arena = crate::Arena::new();
         let dts = crate::parse::parse_typed(source, &arena).unwrap();
         let mut scribe = Scribe::new(true);
-        let (tree, node_labels, _, _) = crate::merge::merge(&dts, &mut scribe);
+        let (tree, node_labels, _, _) = crate::merge::merge(dts, &mut scribe);
         let tree = eval(tree, node_labels, &loader, &mut scribe);
         assert!(scribe.report(&loader, &mut std::io::stderr()));
         let check = tree.get_child("check").unwrap_or(&tree);

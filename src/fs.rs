@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 pub trait Loader {
-    /// Search for an include.  `relative_to` may specify one directory to check first.
+    /// Search for an include.  `relative_to` specifies one directory to check first.
     /// The result is the path found and its contents, or `None` if no matching file was found.
-    fn find(&self, relative_to: Option<&Path>, included_path: &Path) -> Option<(&Path, &[u8])>;
+    fn find(&self, relative_to: &Path, included_path: &Path) -> Option<(&Path, &[u8])>;
 
     /// Read and cache a file.  If successful, the return value is a reference to
     /// the path and the data (both owned by `self`).  Otherwise `None` is returned.
@@ -20,7 +20,7 @@ pub trait Loader {
     // TODO:  This should return a custom error type holding the path.  Use SourceError?
     fn find_utf8(
         &self,
-        relative_to: Option<&Path>,
+        relative_to: &Path,
         included_path: &Path,
     ) -> Result<Option<(&Path, &str)>, Utf8Error> {
         Ok(match self.find(relative_to, included_path) {
@@ -85,7 +85,7 @@ pub struct DummyLoader;
 
 #[allow(unused_variables)]
 impl Loader for DummyLoader {
-    fn find(&self, relative_to: Option<&Path>, included_path: &Path) -> Option<(&Path, &[u8])> {
+    fn find(&self, relative_to: &Path, included_path: &Path) -> Option<(&Path, &[u8])> {
         None
     }
     fn read(&self, path: PathBuf) -> Option<(&Path, &[u8])> {
@@ -144,9 +144,9 @@ impl LocalFileLoader {
 }
 
 impl Loader for LocalFileLoader {
-    fn find(&self, relative_to: Option<&Path>, included_path: &Path) -> Option<(&Path, &[u8])> {
+    fn find(&self, relative_to: &Path, included_path: &Path) -> Option<(&Path, &[u8])> {
         let search_path = self.search_path.iter().map(PathBuf::as_ref);
-        for dir in relative_to.into_iter().chain(search_path) {
+        for dir in core::iter::once(relative_to).chain(search_path) {
             let path = dir.join(included_path);
             if let Some(result) = self.read(path) {
                 return Some(result);
@@ -161,6 +161,7 @@ impl Loader for LocalFileLoader {
         // SAFETY:  We never erase items from the map.
         // The `entry.key()` PathBuf is either in the map, or will be moved into it.
         // PathBuf is "StableDeref": moving it does not move the heap buffer.
+        // The PathBuf's contents are never modified and thus will never reallocate.
         let key: &'a Path = unsafe { core::mem::transmute(entry.key().as_path()) };
         match entry.or_insert_with(|| {
             let result = if key == Path::new(Self::STDIN) {
@@ -180,6 +181,7 @@ impl Loader for LocalFileLoader {
                 // SAFETY:  We never erase items from the map.
                 // Hashtable resizes may move the Vec, but Vec is "StableDeref":
                 // moving it does not move the heap buffer.
+                // The Vec's contents are never modified and thus will never reallocate.
                 let value: &'a [u8] = unsafe { core::mem::transmute(value.as_slice()) };
                 Some((key, value))
             }
@@ -192,9 +194,10 @@ impl Loader for LocalFileLoader {
             .lock()
             .unwrap()
             .iter()
-            .filter_map(|(path, content)| content.is_some().then_some(path.clone()))
+            .filter(|(_, bytes)| bytes.is_some())
+            .map(|(path, _)| path.clone())
             .collect();
-        deps.sort();
+        deps.sort_unstable();
         deps
     }
 
@@ -206,7 +209,7 @@ impl Loader for LocalFileLoader {
             .iter()
             .cloned()
             .collect();
-        dirs.sort();
+        dirs.sort_unstable();
         dirs
     }
 
