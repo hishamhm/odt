@@ -31,6 +31,10 @@ struct Args {
     #[arg(short = 'i', long, value_name = "path")]
     include: Vec<PathBuf>,
 
+    /// Sort output tree alphabetically.
+    #[arg(short = 's', long)]
+    sort: bool,
+
     #[arg(short = 'W', long)]
     treat_warnings_as_errors: bool,
 }
@@ -63,7 +67,10 @@ fn dtb_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let Some((_path, data)) = loader.read(input.clone()) else {
         panic!("can't read {input:?}");
     };
-    let tree = odt::flat::deserialize(data)?;
+    let mut tree = odt::flat::deserialize(data)?;
+    if args.sort {
+        tree.sort();
+    }
     let (goal, mut writer) = open_output(args.out)?;
     match args.out_format {
         Format::Dtb => {
@@ -93,7 +100,10 @@ fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut scribe = odt::error::Scribe::new(args.treat_warnings_as_errors);
     let bytes = match args.out_format {
         Format::Dtb => {
-            let tree = odt::compile(&loader, &arena, &[&input], &mut scribe);
+            let mut tree = odt::compile(&loader, &arena, &[&input], &mut scribe);
+            if args.sort {
+                tree.sort();
+            }
             odt::flat::serialize(&tree)
         }
         Format::Dti => {
@@ -112,7 +122,10 @@ fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         Format::Dts => {
             // This shows the tree after /include/ directives and merge operations,
             // but before assigning phandles or evaluating expressions.
-            let tree = odt::merge(&loader, &arena, &[&input], &mut scribe);
+            let mut tree = odt::merge(&loader, &arena, &[&input], &mut scribe);
+            if args.sort {
+                tree.sort();
+            }
             let source = format!("/dts-v1/;{}/{tree};", tree.labels_as_display());
             // Reparse and pretty-print the output.
             let tree = odt::parse::parse_untyped(&source).unwrap();
@@ -122,7 +135,10 @@ fn dts_input(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         Format::Dtv => {
             // Lower all the way to binary node values, then convert back into source.
             // Types are lost in this process.
-            let tree = odt::compile(&loader, &arena, &[&input], &mut scribe);
+            let mut tree = odt::compile(&loader, &arena, &[&input], &mut scribe);
+            if args.sort {
+                tree.sort();
+            }
             let source = format!("/dts-v1/;/{tree};");
             // Reparse and pretty-print the output.
             let tree = odt::parse::parse_untyped(&source).unwrap();

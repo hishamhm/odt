@@ -141,6 +141,20 @@ impl<P> Node<P> {
             children,
         }
     }
+
+    /// Sort child nodes and properties by name, recursively.
+    pub fn sort(&mut self) {
+        let mut keys: Vec<String> = self.properties.keys().cloned().collect();
+        keys.sort_unstable();
+        for k in keys {
+            self.properties.to_back(&k);
+        }
+        let mut keys: Vec<String> = self.children.keys().cloned().collect();
+        keys.sort_unstable();
+        for k in keys {
+            self.children.to_back(&k).map(Self::sort);
+        }
+    }
 }
 
 impl<P> Default for Node<P> {
